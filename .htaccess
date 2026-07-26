@@ -1,0 +1,6 @@
+# Beskyt konfiguration og interne mapper mod direkte webadgang.
+<FilesMatch "^config(\.example)?\.php$">
+    Require all denied
+</FilesMatch>
+RewriteEngine On
+RewriteRule ^(inc|sql|cli|data)/ - [F,L]
