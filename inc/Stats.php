@@ -34,13 +34,23 @@ class Stats
      * ikke dobbelttæller de startende ryttere.
      */
     /**
-     * @param array<int,string>|string $year     Ét årstal eller flere (OR).
-     * @param array<int,string>|string $distrikt Ét distrikt eller flere (OR).
+     * @param array<int,string>|string $year      Ét årstal eller flere (OR).
+     * @param array<int,string>|string $disciplin Én disciplin eller flere (OR) - matches via
+     *                                             rollekataloget (roles/role_disciplines), ikke
+     *                                             klassens egen disciplin, da nogle roller (fx
+     *                                             "technical_delegate") gælder alle discipliner.
+     * @param array<int,string>|string $distrikt  Ét distrikt eller flere (OR).
+     * @param array<int,string>|string $type      Én DRF-type eller flere (OR), fx "Dressurdommere - B".
+     * @param array<int,string>|string $status    Én officials-status eller flere (OR), fx "aktiv".
+     *                                             Tom = ingen statusfiltrering (viser alle).
      */
-    public function officialsOverview(string $search = '', string $sort = 'staevner', $year = '', string $disciplin = '', string $rolle = '', $distrikt = ''): array
+    public function officialsOverview(string $search = '', string $sort = 'staevner', $year = '', $disciplin = '', string $rolle = '', $distrikt = '', $type = '', $status = ''): array
     {
         $years      = array_values(array_filter((array)$year, fn($v) => $v !== ''));
+        $disciplines = array_values(array_filter((array)$disciplin, fn($v) => $v !== ''));
         $distrikter = array_values(array_filter((array)$distrikt, fn($v) => $v !== ''));
+        $typer      = array_values(array_filter((array)$type, fn($v) => $v !== ''));
+        $statuses   = array_values(array_filter((array)$status, fn($v) => $v !== ''));
 
         $order = [
             'navn'     => 'o.navn ASC',
@@ -61,12 +71,23 @@ class Stats
             $yearParams = $years;
         }
 
-        // Disciplin filtreres pr. klasse (klassens egen disciplin, ikke stævnets
-        // "hyppigste"), rolle filtreres pr. tildeling. Begge dele deles af alle tre
-        // deltal-forespoergsler saa tallene stemmer overens.
+        // Disciplin filtreres via rollekataloget (a.rolle -> roles -> role_disciplines),
+        // rolle filtreres pr. tildeling. Begge dele deles af alle tre deltal-forespoergsler
+        // saa tallene stemmer overens.
         $filterConds = [];
         $filterParams = [];
-        if ($disciplin !== '') { $filterConds[] = 'c.disciplin = ?'; $filterParams[] = $disciplin; }
+        if ($disciplines) {
+            $placeholders = implode(',', array_fill(0, count($disciplines), '?'));
+            $filterConds[] = "EXISTS (
+                SELECT 1 FROM roles r
+                WHERE r.navn = a.rolle
+                  AND (r.alle_discipliner = 1 OR EXISTS (
+                      SELECT 1 FROM role_disciplines rd
+                      WHERE rd.role_id = r.id AND rd.disciplin IN ($placeholders)
+                  ))
+            )";
+            array_push($filterParams, ...$disciplines);
+        }
         if ($rolle !== '')     { $filterConds[] = 'a.rolle = ?';     $filterParams[] = $rolle; }
         $filterWhere = $filterConds ? ('WHERE ' . implode(' AND ', $filterConds)) : '';
 
@@ -111,13 +132,22 @@ class Stats
 
         // Ved aars-, disciplin- eller rollefilter skal officials uden matchende
         // aktivitet udelades, saa cnt-joinet er INNER; ellers LEFT (0-taeller for alle).
-        $countsJoinType = ($years || $disciplin !== '' || $rolle !== '') ? 'JOIN' : 'LEFT JOIN';
+        $countsJoinType = ($years || $disciplines || $rolle !== '') ? 'JOIN' : 'LEFT JOIN';
 
         // Distrikt(er) pr. official fra DRF-listen (en person kan optraede i flere distrikter).
         $districtsSql = "
             SELECT official_id, GROUP_CONCAT(DISTINCT distrikt ORDER BY distrikt SEPARATOR '/') AS distrikter
             FROM drf_officials
             WHERE official_id IS NOT NULL AND distrikt IS NOT NULL AND distrikt <> ''
+            GROUP BY official_id
+        ";
+
+        // Type(r) pr. official fra DRF-listen (fx "Dressurdommere - B"). En person kan
+        // optræde flere gange (flere typer/distrikter), derfor distinkt og adskilt med "/".
+        $typesSql = "
+            SELECT official_id, GROUP_CONCAT(DISTINCT type ORDER BY type SEPARATOR ' / ') AS typer
+            FROM drf_officials
+            WHERE official_id IS NOT NULL AND type IS NOT NULL AND type <> ''
             GROUP BY official_id
         ";
 
@@ -132,21 +162,33 @@ class Stats
             $whereConds[] = "o.id IN (SELECT official_id FROM drf_officials WHERE distrikt IN ($placeholders))";
             array_push($searchParams, ...$distrikter);
         }
+        if ($typer) {
+            $placeholders = implode(',', array_fill(0, count($typer), '?'));
+            $whereConds[] = "o.id IN (SELECT official_id FROM drf_officials WHERE type IN ($placeholders))";
+            array_push($searchParams, ...$typer);
+        }
+        if ($statuses) {
+            $placeholders = implode(',', array_fill(0, count($statuses), '?'));
+            $whereConds[] = "o.status IN ($placeholders)";
+            array_push($searchParams, ...$statuses);
+        }
         $where = $whereConds ? ('WHERE ' . implode(' AND ', $whereConds)) : '';
 
         $sql = "
-            SELECT o.id, o.navn, o.drf_listed,
+            SELECT o.id, o.navn, o.status, o.drf_listed,
                    COALESCE(cnt.antal_staevner, 0) AS antal_staevner,
                    COALESCE(cnt.antal_klasser, 0)  AS antal_klasser,
                    COALESCE(cnt.antal_roller, 0)   AS antal_roller,
                    COALESCE(rid.antal_ryttere, 0)  AS antal_ryttere,
                    lvl.niveauer,
-                   dst.distrikter
+                   dst.distrikter,
+                   typ.typer
             FROM officials o
             $countsJoinType ($countsSql) cnt ON cnt.official_id = o.id
             LEFT JOIN ($ridersSql) rid ON rid.official_id = o.id
             LEFT JOIN ($levelsSql) lvl ON lvl.official_id = o.id
             LEFT JOIN ($districtsSql) dst ON dst.official_id = o.id
+            LEFT JOIN ($typesSql) typ ON typ.official_id = o.id
             $where
             ORDER BY $order
         ";
@@ -168,60 +210,350 @@ class Stats
         return $this->db->all("SELECT DISTINCT rolle FROM assignments WHERE rolle IS NOT NULL AND rolle <> '' ORDER BY rolle");
     }
 
+    /**
+     * Roller fra rollekataloget der er relevante for en given disciplin (til
+     * rolle-editoren paa en klasse) - dem der gaelder alle discipliner, plus
+     * dem der er tilknyttet netop denne disciplin i role_disciplines. Uden
+     * disciplin (ukendt/ikke sat) vises hele kataloget.
+     */
+    public function rolesForDiscipline(?string $disciplin): array
+    {
+        $disciplin = trim((string)$disciplin);
+        if ($disciplin === '') {
+            return $this->db->all('SELECT navn FROM roles ORDER BY navn');
+        }
+        return $this->db->all(
+            'SELECT DISTINCT r.navn
+             FROM roles r
+             LEFT JOIN role_disciplines rd ON rd.role_id = r.id
+             WHERE r.alle_discipliner = 1 OR rd.disciplin = ?
+             ORDER BY r.navn',
+            [$disciplin]
+        );
+    }
+
+    /** Discipliner der reelt bruges i klasser (til rollekatalog og officials-filter). */
+    public function roleDisciplineOptions(): array
+    {
+        $real = $this->db->all(
+            "SELECT DISTINCT disciplin FROM classes
+             WHERE disciplin IS NOT NULL AND disciplin <> '' AND disciplin <> 'score_summary'
+             ORDER BY disciplin"
+        );
+        // "organizer" er ikke en rigtig stævne-/klassedisciplin, men en syntetisk
+        // kategori til roller der handler om at arrangere/lede stævnet (fx
+        // competition_president) frem for en bestemt sportsgren. Tilføjes altid,
+        // saa den kan vaelges i rollekataloget selvom ingen klasse nogensinde
+        // faar denne "disciplin".
+        $real[] = ['disciplin' => 'organizer'];
+        return $real;
+    }
+
+    /** Rollekataloget: hver rolle med tilknyttede discipliner og brugsantal (til Roller-siden). */
+    public function rolesCatalog(): array
+    {
+        return $this->db->all(
+            "SELECT r.id, r.navn, r.alle_discipliner,
+                    GROUP_CONCAT(DISTINCT rd.disciplin ORDER BY rd.disciplin SEPARATOR ', ') AS discipliner,
+                    (SELECT COUNT(*) FROM assignments a WHERE a.rolle = r.navn) AS antal_tildelinger
+             FROM roles r
+             LEFT JOIN role_disciplines rd ON rd.role_id = r.id
+             GROUP BY r.id, r.navn, r.alle_discipliner
+             ORDER BY r.navn"
+        );
+    }
+
+    /** Rollenavne der bruges i tildelinger, men endnu ikke er i rollekataloget. */
+    public function uncatalogedRoles(): array
+    {
+        return $this->db->all(
+            "SELECT a.rolle, COUNT(*) AS antal
+             FROM assignments a
+             LEFT JOIN roles r ON r.navn = a.rolle
+             WHERE r.id IS NULL
+             GROUP BY a.rolle
+             ORDER BY antal DESC"
+        );
+    }
+
+    /**
+     * Evaluerer ét springdommer-niveaus (C/B/A) totalkrav ("X stævner pr. år
+     * ... over en periode på 2 år") for et konkret 2-års-vindue [$y1, $y2].
+     * Kravtallene (X*2) er de oprindelige, uændrede tal for et 2-års-vindue.
+     *
+     * @return array{pass: bool, text: string}
+     */
+    private function evalSpringdommerVindue(string $level, callable $countIn, callable $totalIn, int $y1, int $y2): array
+    {
+        if ($level === 'C') {
+            $tot = $totalIn();
+            $nC  = $countIn(['C']);
+            return ['pass' => $tot >= 16 && $nC >= 8, 'text' => "$tot stævner i alt {$y1}–{$y2} (krav ≥16), heraf $nC C-stævner (krav ≥8)"];
+        }
+        if ($level === 'B') {
+            $tot  = $totalIn();
+            $nC1  = $countIn(['C'], $y1);
+            $nC2  = $countIn(['C'], $y2);
+            $nB   = $countIn(['B']);
+            return ['pass' => $tot >= 18 && $nC1 >= 3 && $nC2 >= 3 && $nB >= 3, 'text' => "$tot stævner i alt {$y1}–{$y2} (krav ≥18), C-stævner: $nC1 ($y1) / $nC2 ($y2) (krav ≥3 pr. år, begge år), $nB B-stævner i alt (krav ≥3)"];
+        }
+        // A
+        $tot  = $totalIn();
+        $nTop = $countIn(['B', 'A', 'FEI']);
+        return ['pass' => $tot >= 16 && $nTop >= 8, 'text' => "$tot stævner i alt {$y1}–{$y2} (krav ≥16), heraf $nTop B/A/FEI-stævner (krav ≥8)"];
+    }
+
+    /**
+     * Springdommeres (niveau D/C/B/A) aktivitetskrav for at opretholde niveauet,
+     * vurderet ud fra dømmerollen 'show_jumping_judge' og stævnets samlede
+     * (højeste) niveau.
+     *
+     * OBS - fortolkning af kravteksten (aftalt eksplicit, da originalteksten er
+     * flertydig):
+     * - Springdommer C/B/A's totalkrav ("X stævner pr. år ... over en periode
+     *   på 2 år") vurderes FØRST i vinduet [forrige år, indeværende år]. Er
+     *   det IKKE opfyldt dér, sættes et opmærksomhedsflag (kravet kan stadig
+     *   nås inden årets udgang), og der tjekkes desuden om kravet var opfyldt
+     *   i de 2 hele foregående år [indeværende år - 2, forrige år] alene - er
+     *   det tilfældet, vises et flueben for at niveauet senest var
+     *   dokumenteret opretholdt. Uden dette ville stort set alle dommere vise
+     *   "opfylder ikke" i starten af et nyt kalenderår, før sæsonen er i gang.
+     * - Springdommer-B's C-stævne-krav er eksplicit årligt "(pr. år)" og skal
+     *   derfor opfyldes i BEGGE år i det vindue der evalueres, individuelt.
+     * - Springdommer-D's årlige krav (min. 4 D-stævner) anses for opfyldt hvis
+     *   enten indeværende år eller forrige hele kalenderår opfylder det,
+     *   så et endnu ikke afsluttet sæsonår ikke fejlagtigt tæller som brud.
+     *   Den alternative vej ("assistent til C-stævner") indgår ikke, da kun
+     *   rollen show_jumping_judge tælles med.
+     *
+     * Deltagelse i DRF's refleksionsdage indgår IKKE - ingen data i Equilive,
+     * skal tjekkes manuelt.
+     *
+     * @return array{years: array<int,int>, rows: array<int,array>}
+     */
+    public function springdommerKravStatus(): array
+    {
+        $currentYear = (int)date('Y');
+        $prevYear    = $currentYear - 1;
+        $prevYear2   = $currentYear - 2;
+        $years       = [$prevYear2, $prevYear, $currentYear];
+
+        $typer = [
+            'Springdommer - D' => 'D',
+            'Springdommer - C' => 'C',
+            'Springdommer - B' => 'B',
+            'Springdommer - A' => 'A',
+        ];
+        $officials = $this->db->all(
+            "SELECT DISTINCT o.id AS official_id, o.navn, o.status, d.type
+             FROM drf_officials d
+             JOIN officials o ON o.id = d.official_id
+             WHERE d.type IN ('" . implode("','", array_keys($typer)) . "')
+             ORDER BY o.navn"
+        );
+        if (!$officials) {
+            return ['years' => $years, 'rows' => []];
+        }
+
+        $ids = array_values(array_unique(array_map(fn($o) => (int)$o['official_id'], $officials)));
+        $idPh   = implode(',', array_fill(0, count($ids), '?'));
+        $yearPh = implode(',', array_fill(0, count($years), '?'));
+        $activityRows = $this->db->all(
+            "SELECT a.official_id, s.aar, s.top_code, COUNT(DISTINCT s.id) AS n
+             FROM assignments a
+             JOIN classes c ON c.id = a.class_id
+             JOIN shows s ON s.id = c.show_id
+             WHERE a.rolle = 'show_jumping_judge' AND a.official_id IN ($idPh) AND s.aar IN ($yearPh)
+             GROUP BY a.official_id, s.aar, s.top_code",
+            array_merge($ids, $years)
+        );
+
+        // $activity[official_id][aar][top_code] = antal distinkte stævner.
+        $activity = [];
+        foreach ($activityRows as $r) {
+            $activity[(int)$r['official_id']][(int)$r['aar']][$r['top_code']] = (int)$r['n'];
+        }
+
+        $rows = [];
+        foreach ($officials as $o) {
+            $oid    = (int)$o['official_id'];
+            $level  = $typer[$o['type']];
+            $byYear = $activity[$oid] ?? [];
+
+            $makeCounters = function (array $windowYears) use ($byYear) {
+                $countIn = function (array $codes, ?int $year = null) use ($byYear, $windowYears): int {
+                    $sum = 0;
+                    $yrs = $year !== null ? [$year] : $windowYears;
+                    foreach ($yrs as $y) {
+                        foreach ($codes as $c) {
+                            $sum += $byYear[$y][$c] ?? 0;
+                        }
+                    }
+                    return $sum;
+                };
+                $totalIn = fn(?int $year = null) => $countIn(['E', 'D', 'C', 'B', 'A', 'FEI'], $year);
+                return [$countIn, $totalIn];
+            };
+
+            $krav             = '';
+            $opfylder         = null;
+            $opfyldtTidligere = null;
+
+            if ($level === 'D') {
+                [$countIn] = $makeCounters([$prevYear, $currentYear]);
+                $nCur  = $countIn(['D'], $currentYear);
+                $nPrev = $countIn(['D'], $prevYear);
+                $opfylder = $nCur >= 4 || $nPrev >= 4;
+                $krav = "$nCur D-stævner i $currentYear, $nPrev i $prevYear (krav: min. 4 i mindst ét af de to år; assistent-alternativet er ikke medregnet)";
+            } else {
+                // C/B/A: vurdér først [forrige år, indeværende år]. Fejler det,
+                // saet et opmaerksomhedsflag og tjek om kravet var opfyldt i de
+                // 2 hele foregaaende aar alene (uden indevaerende aar).
+                [$countIn1, $totalIn1] = $makeCounters([$prevYear, $currentYear]);
+                $eval1    = $this->evalSpringdommerVindue($level, $countIn1, $totalIn1, $prevYear, $currentYear);
+                $opfylder = $eval1['pass'];
+                $krav     = $eval1['text'];
+
+                if (!$opfylder) {
+                    [$countIn2, $totalIn2] = $makeCounters([$prevYear2, $prevYear]);
+                    $eval2 = $this->evalSpringdommerVindue($level, $countIn2, $totalIn2, $prevYear2, $prevYear);
+                    $opfyldtTidligere = $eval2['pass'];
+                    $krav .= ' | Tidligere (fuldt ' . $prevYear2 . '–' . $prevYear . '): ' . $eval2['text'];
+                }
+            }
+
+            $rows[] = [
+                'official_id'       => $oid,
+                'navn'              => $o['navn'],
+                'status'            => $o['status'],
+                'niveau'            => $level,
+                'opfylder'          => $opfylder,
+                'opfyldt_tidligere' => $opfyldtTidligere,
+                'krav'              => $krav,
+            ];
+        }
+
+        return ['years' => $years, 'rows' => $rows];
+    }
+
     /** Én officials stamdata + nøgletal. */
     public function official(int $id): ?array
     {
         return $this->db->one('SELECT * FROM officials WHERE id = ?', [$id]);
     }
 
-    /** Fordeling af roller for én official. */
-    public function officialRoles(int $id): array
+    /** Tidligere navne (aliaser) for én official, fx efter en fletning. */
+    public function officialAliases(int $id): array
     {
         return $this->db->all(
-            'SELECT rolle, COUNT(*) AS antal
-             FROM assignments WHERE official_id = ?
-             GROUP BY rolle ORDER BY antal DESC, rolle',
+            'SELECT navn, created_at FROM official_aliases WHERE official_id = ? ORDER BY created_at',
             [$id]
         );
     }
 
-    /** Stævner en official har virket ved, med roller og nøgletal. */
-    public function officialShows(int $id): array
+    /**
+     * Fordeling af roller for én official (kan filtreres på år, OR).
+     * @param array<int,string>|string $year Ét årstal eller flere (OR).
+     */
+    public function officialRoles(int $id, $year = ''): array
     {
+        $years = array_values(array_filter((array)$year, fn($v) => $v !== ''));
+
+        if (!$years) {
+            return $this->db->all(
+                'SELECT rolle, COUNT(*) AS antal
+                 FROM assignments WHERE official_id = ?
+                 GROUP BY rolle ORDER BY antal DESC, rolle',
+                [$id]
+            );
+        }
+
+        $placeholders = implode(',', array_fill(0, count($years), '?'));
+        return $this->db->all(
+            "SELECT a.rolle, COUNT(*) AS antal
+             FROM assignments a
+             JOIN classes c ON c.id = a.class_id
+             JOIN shows   s ON s.id = c.show_id AND s.aar IN ($placeholders)
+             WHERE a.official_id = ?
+             GROUP BY a.rolle ORDER BY antal DESC, a.rolle",
+            array_merge($years, [$id])
+        );
+    }
+
+    /**
+     * Stævner en official har virket ved, med roller og nøgletal (kan filtreres på år, OR).
+     * @param array<int,string>|string $year Ét årstal eller flere (OR).
+     */
+    public function officialShows(int $id, $year = ''): array
+    {
+        $years = array_values(array_filter((array)$year, fn($v) => $v !== ''));
+
+        $yearCond = '';
+        $yearParams = [];
+        if ($years) {
+            $placeholders = implode(',', array_fill(0, count($years), '?'));
+            $yearCond = "AND s.aar IN ($placeholders)";
+            $yearParams = $years;
+        }
+
+        // Ryttere pr. stævne, dedupliceret pr. klasse (flere roller i samme klasse maa
+        // ikke dobbelttaelle de startende ryttere). Beregnes som et selvstændigt,
+        // ikke-korreleret underforespørgsel (kun filtreret på official_id) og joines ind
+        // pr. show_id bagefter - en korreleret subquery i FROM (som viste sig her) er
+        // ikke standard-SQL og fejler på MariaDB, selvom MySQL 8 accepterer den.
         return $this->db->all(
             "SELECT s.id, s.prop, s.dato, s.disciplin, s.top_code, s.has_lower,
                     cl.navn AS klub, cl.forkort,
                     COUNT(DISTINCT a.class_id) AS klasser,
                     GROUP_CONCAT(DISTINCT a.rolle ORDER BY a.rolle SEPARATOR ', ') AS roller,
-                    (SELECT COALESCE(SUM(y.starter),0) FROM (
-                         SELECT DISTINCT a2.class_id, c2.starter
-                         FROM assignments a2
-                         JOIN classes c2 ON c2.id = a2.class_id
-                         WHERE a2.official_id = ? AND c2.show_id = s.id
-                    ) y) AS ryttere
+                    COALESCE(rid.ryttere, 0) AS ryttere
              FROM assignments a
              JOIN classes c ON c.id = a.class_id
-             JOIN shows   s ON s.id = c.show_id
+             JOIN shows   s ON s.id = c.show_id $yearCond
              LEFT JOIN clubs cl ON cl.id = s.club_id
+             LEFT JOIN (
+                 SELECT dc.show_id, COALESCE(SUM(dc.starter), 0) AS ryttere
+                 FROM (
+                     SELECT DISTINCT a2.class_id, c2.show_id, c2.starter
+                     FROM assignments a2
+                     JOIN classes c2 ON c2.id = a2.class_id
+                     WHERE a2.official_id = ?
+                 ) dc
+                 GROUP BY dc.show_id
+             ) rid ON rid.show_id = s.id
              WHERE a.official_id = ?
-             GROUP BY s.id, s.prop, s.dato, s.disciplin, s.top_code, s.has_lower, cl.navn, cl.forkort
+             GROUP BY s.id, s.prop, s.dato, s.disciplin, s.top_code, s.has_lower, cl.navn, cl.forkort, rid.ryttere
              ORDER BY s.dato DESC, s.prop",
-            [$id, $id]
+            array_merge($yearParams, [$id], [$id])
         );
     }
 
-    /** Niveaufordeling (antal klasser pr. niveau) for én official. */
-    public function officialLevels(int $id): array
+    /**
+     * Niveaufordeling (antal klasser pr. niveau) for én official (kan filtreres på år, OR).
+     * @param array<int,string>|string $year Ét årstal eller flere (OR).
+     */
+    public function officialLevels(int $id, $year = ''): array
     {
+        $years = array_values(array_filter((array)$year, fn($v) => $v !== ''));
+
+        $yearJoin = '';
+        $yearParams = [];
+        if ($years) {
+            $placeholders = implode(',', array_fill(0, count($years), '?'));
+            $yearJoin = "JOIN shows s ON s.id = c.show_id AND s.aar IN ($placeholders)";
+            $yearParams = $years;
+        }
+
         return $this->db->all(
             "SELECT l.code, l.label, l.`rank`, COUNT(DISTINCT a.class_id) AS klasser
              FROM assignments a
              JOIN classes c ON c.id = a.class_id
              JOIN levels  l ON l.slug = c.niveau_slug
+             $yearJoin
              WHERE a.official_id = ?
              GROUP BY l.code, l.label, l.`rank`
              ORDER BY l.`rank` DESC",
-            [$id]
+            array_merge($yearParams, [$id])
         );
     }
 
@@ -270,6 +602,7 @@ class Stats
     {
         return $this->db->all(
             "SELECT c.id, c.klassenr, c.klassenavn, c.disciplin, c.starter, c.stilspringning,
+                    c.hest_pony, c.svaerhedsgrad,
                     l.code AS niveau_code, l.label AS niveau_label,
                     GROUP_CONCAT(DISTINCT CONCAT(o.navn, ' (', a.rolle, ')') ORDER BY o.navn SEPARATOR '; ') AS officials
              FROM classes c
@@ -277,7 +610,8 @@ class Stats
              LEFT JOIN assignments a ON a.class_id = c.id
              LEFT JOIN officials o ON o.id = a.official_id
              WHERE c.show_id = ?
-             GROUP BY c.id, c.klassenr, c.klassenavn, c.disciplin, c.starter, c.stilspringning, l.code, l.label
+             GROUP BY c.id, c.klassenr, c.klassenavn, c.disciplin, c.starter, c.stilspringning,
+                      c.hest_pony, c.svaerhedsgrad, l.code, l.label
              ORDER BY c.klassenr + 0, c.klassenr",
             [$id]
         );
@@ -615,6 +949,11 @@ class Stats
     public function drfDistrikter(): array
     {
         return $this->db->all("SELECT DISTINCT distrikt FROM drf_officials WHERE distrikt IS NOT NULL AND distrikt <> '' ORDER BY distrikt");
+    }
+
+    public function drfTyper(): array
+    {
+        return $this->db->all("SELECT DISTINCT type FROM drf_officials WHERE type IS NOT NULL AND type <> '' ORDER BY type");
     }
 
 }

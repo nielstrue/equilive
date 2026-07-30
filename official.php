@@ -1,8 +1,11 @@
 <?php
 require __DIR__ . '/inc/bootstrap.php';
 require __DIR__ . '/inc/layout.php';
+require_login();
 
-$id = (int)($_GET['id'] ?? 0);
+$id          = (int)($_GET['id'] ?? 0);
+$selectedAar = array_map('strval', (array)($_GET['aar'] ?? []));
+
 $stats = new Stats(db());
 $off = $stats->official($id);
 
@@ -13,10 +16,22 @@ if (!$off) {
     exit;
 }
 
-$roles  = $stats->officialRoles($id);
-$levels = $stats->officialLevels($id);
-$shows  = $stats->officialShows($id);
+$statusError = null;
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'set_status') {
+    $nyStatus = $_POST['status'] ?? '';
+    if (!in_array($nyStatus, ['aktiv', 'ikke_aktiv', 'kun_e_niveau', 'fei_official'], true)) {
+        $statusError = 'Ukendt status.';
+    } else {
+        db()->run('UPDATE officials SET status = ? WHERE id = ?', [$nyStatus, $id]);
+        $off['status'] = $nyStatus;
+    }
+}
+
+$roles  = $stats->officialRoles($id, $selectedAar);
+$levels = $stats->officialLevels($id, $selectedAar);
+$shows  = $stats->officialShows($id, $selectedAar);
 $drfRoles = $stats->officialDrfRoles($id);
+$aliases  = $stats->officialAliases($id);
 
 $totRyttere = 0;
 foreach ($shows as $s) { $totRyttere += (int)$s['ryttere']; }
@@ -24,7 +39,29 @@ foreach ($shows as $s) { $totRyttere += (int)$s['ryttere']; }
 render_header($off['navn'], 'officials');
 ?>
 <p><a href="<?= h(url('officials.php')) ?>">← Alle officials</a></p>
-<h1><?= h($off['navn']) ?></h1>
+<h1><?= h($off['navn']) ?> <?= official_status_badge($off['status']) ?></h1>
+<?php if ($aliases): ?>
+    <p class="muted">Tidligere navn(e): <?= h(implode(', ', array_column($aliases, 'navn'))) ?></p>
+<?php endif; ?>
+
+<?php if ($statusError): ?><div class="notice error"><?= h($statusError) ?></div><?php endif; ?>
+<form method="post" style="display:flex;gap:.4rem;align-items:center;margin:.6rem 0">
+    <input type="hidden" name="action" value="set_status">
+    <label class="muted" style="font-size:.85rem">Status:
+        <select name="status">
+            <option value="aktiv"        <?= $off['status']==='aktiv'        ? 'selected' : '' ?>>Aktiv</option>
+            <option value="kun_e_niveau" <?= $off['status']==='kun_e_niveau' ? 'selected' : '' ?>>Kun E-niveau (uuddannet klubdommer)</option>
+            <option value="fei_official" <?= $off['status']==='fei_official' ? 'selected' : '' ?>>FEI official (ikke fundet paa DRF-listen)</option>
+            <option value="ikke_aktiv"   <?= $off['status']==='ikke_aktiv'   ? 'selected' : '' ?>>Ikke aktiv</option>
+        </select>
+    </label>
+    <button class="btn" type="submit">Gem</button>
+</form>
+
+<?php if ($selectedAar): ?>
+    <p class="muted">Filtreret på år: <strong><?= h(implode(', ', $selectedAar)) ?></strong>
+        · <a href="<?= h(url('official.php?id=' . $id)) ?>">vis alle år</a></p>
+<?php endif; ?>
 
 <div class="cards">
     <div class="card"><span class="num"><?= count($shows) ?></span><span class="lbl">Stævner</span></div>

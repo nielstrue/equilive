@@ -268,8 +268,21 @@ class Importer
         }
         $id = $this->db->scalar('SELECT id FROM officials WHERE navn = ?', [$navn]);
         if ($id === false) {
+            // Er navnet et kendt alias for en eksisterende official (fx efter et
+            // navneskift der tidligere er flettet)? Saa genbruges samme official
+            // i stedet for at oprette en ny.
+            $id = $this->db->scalar('SELECT official_id FROM official_aliases WHERE navn = ?', [$navn]);
+        }
+        if ($id === false) {
             $this->db->run('INSERT INTO officials (navn) VALUES (?)', [$navn]);
             $id = $this->db->lastId();
+        } else {
+            // Optræder personen i årets Equipe-eksport, er vedkommende aktiv -
+            // ogsaa selvom status tidligere er sat til ikke_aktiv (fx efter en pause).
+            $this->db->run(
+                "UPDATE officials SET status = 'aktiv' WHERE id = ? AND status = 'ikke_aktiv'",
+                [$id]
+            );
         }
         return $this->officialCache[$navn] = (int)$id;
     }
@@ -354,5 +367,63 @@ class Importer
         foreach ($best as $sid => $b) {
             $updD->execute([$b['disciplin'], $sid]);
         }
+    }
+
+    /**
+     * Henter CSV'en fra en URL (fx api.equilive.dk) og importerer den.
+     * Gemmes til $targetPath, så filen også ligger klar til fx planlagt
+     * kørsel via cli/import.php (typisk config['default_csv']).
+     *
+     * @return array summary med tælleværdier, se import()
+     */
+    public function importFromUrl(string $url, string $targetPath): array
+    {
+        $body = $this->fetchUrl($url);
+        if ($body === '') {
+            throw new RuntimeException('Hentede en tom fil fra ' . $url);
+        }
+
+        $dir = dirname($targetPath);
+        if (!is_dir($dir)) {
+            throw new RuntimeException('Målmappen findes ikke: ' . $dir);
+        }
+        if (file_put_contents($targetPath, $body) === false) {
+            throw new RuntimeException('Kunne ikke skrive filen: ' . $targetPath);
+        }
+
+        return $this->import($targetPath, basename($targetPath));
+    }
+
+    private function fetchUrl(string $url): string
+    {
+        if (function_exists('curl_init')) {
+            $ch = curl_init($url);
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_FOLLOWLOCATION => true,
+                CURLOPT_TIMEOUT        => 60,
+                CURLOPT_USERAGENT      => 'Mozilla/5.0 (compatible; EquiliveBot/1.0)',
+            ]);
+            $body = curl_exec($ch);
+            $err  = curl_error($ch);
+            $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
+            if ($body === false) {
+                throw new RuntimeException('curl-fejl: ' . $err);
+            }
+            if ($code >= 400) {
+                throw new RuntimeException('HTTP ' . $code . ' fra ' . $url);
+            }
+            return (string)$body;
+        }
+        $ctx = stream_context_create(['http' => [
+            'timeout' => 60,
+            'header'  => "User-Agent: Mozilla/5.0 (compatible; EquiliveBot/1.0)\r\n",
+        ]]);
+        $body = @file_get_contents($url, false, $ctx);
+        if ($body === false) {
+            throw new RuntimeException('Kunne ikke hente URL (aktivér curl eller allow_url_fopen): ' . $url);
+        }
+        return $body;
     }
 }

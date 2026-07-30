@@ -3,20 +3,27 @@
  * CLI-høstning af DRF's klubliste ("find-klubber") - udfylder clubs.distrikt.
  *
  * Brug:
- *   php cli/import_drf_clubs.php            (live fra rideforbund.dk)
- *   php cli/import_drf_clubs.php --file      (fra gemt HTML, se drf_clubs_file i config.php)
+ *   php cli/import_drf_clubs.php                          (live fra rideforbund.dk)
+ *   php cli/import_drf_clubs.php --file sti\til\gemt.html  (fra gemt HTML)
+ *
+ * (Fra browseren kan en gemt HTML-fil i stedet uploades under Import.)
  *
  * Windows Task Scheduler-eksempel:
  *   C:\wamp64\bin\php\php8.x\php.exe C:\Users\niels\dev\equilive\cli\import_drf_clubs.php
  */
 require __DIR__ . '/../inc/bootstrap.php';
 
-$useFile = in_array('--file', $argv, true);
+$fileIdx  = array_search('--file', $argv, true);
+$filePath = $fileIdx !== false ? ($argv[$fileIdx + 1] ?? null) : null;
+if ($fileIdx !== false && !$filePath) {
+    fwrite(STDERR, "Brug: php cli/import_drf_clubs.php --file <sti-til-gemt-html>\n");
+    exit(1);
+}
 
 $importer = new DrfClubImporter(db());
 try {
-    if ($useFile) {
-        $r = $importer->import($GLOBALS['config']['drf_clubs_file'] ?? null, true);
+    if ($filePath !== null) {
+        $r = $importer->import($filePath, true);
     } else {
         $r = $importer->import(null, false);
     }

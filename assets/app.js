@@ -27,3 +27,13 @@ document.addEventListener('keydown', function (e) {
         });
     }
 });
+
+// Roller-siden: deaktivér disciplin-checkboxes i rækken live, når "Alle discipliner" krydses af.
+document.addEventListener('change', function (e) {
+    if (!e.target.classList.contains('js-alle-toggle')) return;
+    var row = e.target.closest('tr');
+    if (!row) return;
+    row.querySelectorAll('input[name="disciplines[]"]').forEach(function (cb) {
+        cb.disabled = e.target.checked;
+    });
+});

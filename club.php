@@ -1,6 +1,7 @@
 <?php
 require __DIR__ . '/inc/bootstrap.php';
 require __DIR__ . '/inc/layout.php';
+require_login();
 
 $id          = (int)($_GET['id'] ?? 0);
 $selectedAar = array_map('strval', (array)($_GET['aar'] ?? []));

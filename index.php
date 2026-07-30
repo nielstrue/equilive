@@ -1,6 +1,7 @@
 <?php
 require __DIR__ . '/inc/bootstrap.php';
 require __DIR__ . '/inc/layout.php';
+require_login();
 
 $stats = new Stats(db());
 $d = $stats->dashboard();

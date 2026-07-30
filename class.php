@@ -1,6 +1,7 @@
 <?php
 require __DIR__ . '/inc/bootstrap.php';
 require __DIR__ . '/inc/layout.php';
+require_login();
 
 $id    = (int)($_GET['id'] ?? 0);
 $stats = new Stats(db());
@@ -50,7 +51,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $assignments = $stats->classAssignments($id);
-$roles       = $stats->roles();
+$roles       = $stats->rolesForDiscipline($class['disciplin'] ?? '');
+$roleNames   = array_column($roles, 'navn');
 
 render_header($class['klassenavn'], 'shows');
 ?>
@@ -61,6 +63,10 @@ render_header($class['klassenavn'], 'shows');
     <tr><th>Klassenr.</th><td><?= h($class['klassenr']) ?></td></tr>
     <tr><th>Disciplin</th><td><?= h($class['disciplin'] ?? '–') ?></td></tr>
     <tr><th>Startende ryttere</th><td><?= $class['starter'] === null ? '–' : (int)$class['starter'] ?></td></tr>
+    <?php if ($class['hest_pony'] !== null || $class['svaerhedsgrad'] !== null): ?>
+        <tr><th>Hest/Pony</th><td><?= h($class['hest_pony'] ?? '–') ?></td></tr>
+        <tr><th>Sværhedsgrad</th><td><?= $class['svaerhedsgrad'] === null ? '–' : (int)$class['svaerhedsgrad'] ?></td></tr>
+    <?php endif; ?>
 </table>
 
 <?php if ($error): ?><div class="notice error"><strong>Fejl:</strong> <?= h($error) ?></div><?php endif; ?>
@@ -68,21 +74,35 @@ render_header($class['klassenavn'], 'shows');
 
 <h2>Officials og roller</h2>
 <p class="muted">Ret rollen for en official hvis der er valgt forkert i den importerede fil.</p>
-
-<datalist id="rolle-liste">
-    <?php foreach ($roles as $r): ?><option value="<?= h($r['rolle']) ?>"><?php endforeach; ?>
-</datalist>
+<?php if (!$roleNames): ?>
+    <p class="muted">Ingen roller i <a href="<?= h(url('roles.php')) ?>">rollekataloget</a> matcher denne
+        disciplin endnu - tilføj/klassificér en rolle under Roller.</p>
+<?php endif; ?>
 
 <table class="data">
     <thead><tr><th>Official</th><th>Rolle</th><th>Nummer</th></tr></thead>
     <tbody>
     <?php foreach ($assignments as $a): ?>
+        <?php
+        // Klassens nuvaerende rolle er altid en valgmulighed, ogsaa hvis den (endnu)
+        // ikke er klassificeret til denne disciplin i rollekataloget.
+        $current = $a['rolle'];
+        $options = $roleNames;
+        if ($current !== '' && !in_array($current, $options, true)) {
+            $options[] = $current;
+            sort($options);
+        }
+        ?>
         <tr>
             <td><a href="<?= h(url('official.php?id=' . (int)$a['official_id'])) ?>"><?= h($a['navn']) ?></a></td>
             <td>
                 <form method="post" style="display:flex;gap:.4rem">
                     <input type="hidden" name="assignment_id" value="<?= (int)$a['id'] ?>">
-                    <input type="text" name="rolle" list="rolle-liste" value="<?= h($a['rolle']) ?>" size="20">
+                    <select name="rolle">
+                        <?php foreach ($options as $opt): ?>
+                            <option value="<?= h($opt) ?>" <?= $opt === $current ? 'selected' : '' ?>><?= h($opt) ?></option>
+                        <?php endforeach; ?>
+                    </select>
                     <button class="btn" type="submit">Gem</button>
                 </form>
             </td>

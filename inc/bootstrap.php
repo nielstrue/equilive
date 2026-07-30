@@ -36,6 +36,47 @@ spl_autoload_register(function (string $class): void {
 // --- Global databaseforbindelse ---
 $GLOBALS['config'] = $config;
 
+// --- Session (login) - ikke relevant for CLI-scripts ---
+if (PHP_SAPI !== 'cli' && session_status() === PHP_SESSION_NONE) {
+    $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+        || ($_SERVER['SERVER_PORT'] ?? '') === '443';
+    session_set_cookie_params([
+        'lifetime' => 0,
+        'path'     => rtrim($config['base_path'] ?? '', '/') . '/',
+        'httponly' => true,
+        'samesite' => 'Lax',
+        'secure'   => $isHttps,
+    ]);
+    session_start();
+}
+
+/** Den loggede ind bruger (id, name, email, role), eller null. */
+function current_user(): ?array {
+    return $_SESSION['user'] ?? null;
+}
+
+/** Kræver at brugeren er logget ind - sender til login.php ellers. */
+function require_login(): void {
+    if (current_user() === null) {
+        $next = $_SERVER['REQUEST_URI'] ?? '';
+        header('Location: ' . url('login.php') . ($next !== '' ? '?next=' . urlencode($next) : ''));
+        exit;
+    }
+}
+
+/** Kræver admin-rollen (fx til import af data) - viser "adgang nægtet" ellers. */
+function require_admin(): void {
+    require_login();
+    if ((current_user()['role'] ?? 'user') !== 'admin') {
+        require_once __DIR__ . '/layout.php';
+        http_response_code(403);
+        render_header('Adgang nægtet', '');
+        echo '<div class="notice error">Denne side kræver admin-rollen.</div>';
+        render_footer();
+        exit;
+    }
+}
+
 function db(): Database {
     static $db = null;
     if ($db === null) {

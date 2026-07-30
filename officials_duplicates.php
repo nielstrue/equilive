@@ -1,6 +1,7 @@
 <?php
 require __DIR__ . '/inc/bootstrap.php';
 require __DIR__ . '/inc/layout.php';
+require_admin();
 
 $stats        = new Stats(db());
 $batchResults = null;
@@ -44,7 +45,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['pairs']) && is_array
 // saa man ikke skal genindlaese siden manuelt.
 $candidates = $stats->possibleDuplicates();
 
-render_header('Mulige dubletter', 'officials');
+render_header('Mulige dubletter', 'officials_duplicates');
 ?>
 <p><a href="<?= h(url('officials.php')) ?>">← Alle officials</a></p>
 <h1>Mulige dubletter blandt officials</h1>

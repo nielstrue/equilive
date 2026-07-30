@@ -1,6 +1,7 @@
 <?php
 require __DIR__ . '/inc/bootstrap.php';
 require __DIR__ . '/inc/layout.php';
+require_login();
 
 $search      = trim($_GET['q'] ?? '');
 $sort        = $_GET['sort'] ?? 'staevner';

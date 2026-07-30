@@ -64,7 +64,13 @@ class DrfImporter
             $this->db->run('UPDATE officials SET drf_listed = 0');
 
             // Byg opslag: normaliseret navn -> official_id (fra eksisterende data).
+            // Tidligere navne (aliaser fra flettede officials, fx efter et
+            // navneskift) inkluderes ogsaa, saa DRF-listen stadig matcher personen
+            // under det gamle navn - men et nuvaerende navn har altid forrang.
             $map = [];
+            foreach ($this->db->all('SELECT official_id, navn FROM official_aliases') as $a) {
+                $map[$this->norm($a['navn'])] = (int)$a['official_id'];
+            }
             foreach ($this->db->all('SELECT id, navn FROM officials') as $o) {
                 $map[$this->norm($o['navn'])] = (int)$o['id'];
             }

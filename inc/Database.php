@@ -10,7 +10,9 @@ class Database
 
     public function __construct(array $cfg)
     {
-        $dsn = sprintf(
+        // 'dsn' kan angives direkte (fx til at skifte host/dbnavn pr. miljø i config.php);
+        // ellers bygges den af de enkelte dele som før.
+        $dsn = $cfg['dsn'] ?? sprintf(
             'mysql:host=%s;port=%d;dbname=%s;charset=%s',
             $cfg['host'], $cfg['port'] ?? 3306, $cfg['name'], $cfg['charset'] ?? 'utf8mb4'
         );

@@ -1,6 +1,7 @@
 <?php
 require __DIR__ . '/inc/bootstrap.php';
 require __DIR__ . '/inc/layout.php';
+require_admin();
 
 $stats  = new Stats(db());
 $result = null;
@@ -27,7 +28,7 @@ $all      = $stats->officialsOverview('', 'navn');
 $preKeep  = (int)($_GET['keep'] ?? 0);
 $preMerge = (int)($_GET['merge'] ?? 0);
 
-render_header('Flet officials', 'officials');
+render_header('Flet officials', 'officials_merge');
 ?>
 <p><a href="<?= h(url('officials.php')) ?>">← Alle officials</a> ·
    <a href="<?= h(url('officials_duplicates.php')) ?>">Find mulige dubletter →</a></p>

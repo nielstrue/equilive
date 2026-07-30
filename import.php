@@ -1,6 +1,7 @@
 <?php
 require __DIR__ . '/inc/bootstrap.php';
 require __DIR__ . '/inc/layout.php';
+require_admin();
 
 $result        = null;
 $drfResult     = null;
@@ -11,7 +12,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'drf')
     try {
         $drf = new DrfImporter(db());
         if (($_POST['drf_source'] ?? '') === 'file') {
-            $drfResult = $drf->import($GLOBALS['config']['drf_file'] ?? null, true);
+            if (empty($_FILES['drf_html']['tmp_name']) || !is_uploaded_file($_FILES['drf_html']['tmp_name'])) {
+                throw new RuntimeException('Vælg en HTML-fil at uploade.');
+            }
+            $drfResult = $drf->import($_FILES['drf_html']['tmp_name'], true);
         } else {
             $drfResult = $drf->import(null, false); // live fra config drf_url
         }
@@ -22,10 +26,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'drf')
     try {
         $drfClubs = new DrfClubImporter(db());
         if (($_POST['drf_source'] ?? '') === 'file') {
-            $drfClubResult = $drfClubs->import($GLOBALS['config']['drf_clubs_file'] ?? null, true);
+            if (empty($_FILES['drf_clubs_html']['tmp_name']) || !is_uploaded_file($_FILES['drf_clubs_html']['tmp_name'])) {
+                throw new RuntimeException('Vælg en HTML-fil at uploade.');
+            }
+            $drfClubResult = $drfClubs->import($_FILES['drf_clubs_html']['tmp_name'], true);
         } else {
             $drfClubResult = $drfClubs->import(null, false); // live fra config drf_clubs_url
         }
+    } catch (Throwable $e) {
+        $error = $e->getMessage();
+    }
+} elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'csv_url') {
+    try {
+        $url = $GLOBALS['config']['csv_url'] ?? '';
+        if ($url === '') {
+            throw new RuntimeException('Ingen csv_url sat i config.php.');
+        }
+        $target   = $GLOBALS['config']['default_csv'] ?? (__DIR__ . '/data/officials_2026.csv');
+        $importer = new Importer(db());
+        $result   = $importer->importFromUrl($url, $target);
     } catch (Throwable $e) {
         $error = $e->getMessage();
     }
@@ -34,11 +53,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'drf')
         $importer = new Importer(db());
         if (!empty($_FILES['csv']['tmp_name']) && is_uploaded_file($_FILES['csv']['tmp_name'])) {
             $result = $importer->import($_FILES['csv']['tmp_name'], $_FILES['csv']['name'] ?? 'upload.csv');
-        } elseif (!empty($_POST['server_path'])) {
-            $path = $_POST['server_path'];
-            $result = $importer->import($path, basename($path));
         } else {
-            $error = 'Vælg en CSV-fil eller angiv en sti på serveren.';
+            $error = 'Vælg en CSV-fil.';
         }
     } catch (Throwable $e) {
         $error = $e->getMessage();
@@ -49,7 +65,7 @@ $defaultPath = $GLOBALS['config']['default_csv'] ?? '';
 
 render_header('Import', 'import');
 ?>
-<h1>Import af CSV</h1>
+<h1>Equipe official liste</h1>
 
 <?php if ($error): ?>
     <div class="notice error"><strong>Fejl:</strong> <?= h($error) ?></div>
@@ -94,6 +110,16 @@ render_header('Import', 'import');
 
 <div class="grid2">
     <section>
+        <h2>Hent live fra equilive.dk</h2>
+        <form method="post">
+            <input type="hidden" name="action" value="csv_url">
+            <p><button class="btn" type="submit">Hent og indlæs nyeste CSV</button></p>
+        </form>
+        <p class="muted">Henter <code><?= h($GLOBALS['config']['csv_url'] ?? '') ?></code> og gemmer den som
+            <code><?= h($defaultPath) ?></code>, klar til både denne knap og planlagt kørsel via
+            <code>cli/import.php</code>. Kræver at serveren har adgang til internettet (curl).</p>
+    </section>
+    <section>
         <h2>Upload fil</h2>
         <form method="post" enctype="multipart/form-data">
             <p><input type="file" name="csv" accept=".csv,text/csv"></p>
@@ -101,17 +127,6 @@ render_header('Import', 'import');
         </form>
         <p class="muted">Samme fil kan indlæses igen hver uge – eksisterende rækker
             opdateres, og der oprettes ingen dubletter.</p>
-    </section>
-    <section>
-        <h2>Eller fra sti på serveren</h2>
-        <form method="post">
-            <p><input type="text" name="server_path" size="45"
-                      value="<?= h($defaultPath) ?>"></p>
-            <p><button class="btn" type="submit">Indlæs fra sti</button></p>
-        </form>
-        <p class="muted">Praktisk til fast placering, fx en fil der hentes automatisk
-            fra <code>api.equilive.dk</code>. Se også <code>cli/import.php</code> til
-            planlagt kørsel.</p>
     </section>
 </div>
 
@@ -128,14 +143,14 @@ render_header('Import', 'import');
             Kræver at serveren har adgang til internettet (curl).</p>
     </section>
     <section>
-        <h3>Indlæs fra gemt fil</h3>
-        <form method="post">
+        <h3>Upload fil</h3>
+        <form method="post" enctype="multipart/form-data">
             <input type="hidden" name="action" value="drf">
             <input type="hidden" name="drf_source" value="file">
-            <p><button class="btn" type="submit">Indlæs fra gemt HTML</button></p>
+            <p><input type="file" name="drf_html" accept=".html,.htm,text/html"></p>
+            <p><button class="btn" type="submit">Indlæs HTML</button></p>
         </form>
-        <p class="muted">Bruger <code><?= h($GLOBALS['config']['drf_file'] ?? '') ?></code>.
-            Gem find-dommer-siden som HTML her, hvis live-hentning ikke er mulig.</p>
+        <p class="muted">Gem find-dommer-siden som HTML og upload den her, hvis live-hentning ikke er mulig.</p>
     </section>
 </div>
 
@@ -153,14 +168,14 @@ render_header('Import', 'import');
             adgang til internettet (curl).</p>
     </section>
     <section>
-        <h3>Indlæs fra gemt fil</h3>
-        <form method="post">
+        <h3>Upload fil</h3>
+        <form method="post" enctype="multipart/form-data">
             <input type="hidden" name="action" value="drf_clubs">
             <input type="hidden" name="drf_source" value="file">
-            <p><button class="btn" type="submit">Indlæs fra gemt HTML</button></p>
+            <p><input type="file" name="drf_clubs_html" accept=".html,.htm,text/html"></p>
+            <p><button class="btn" type="submit">Indlæs HTML</button></p>
         </form>
-        <p class="muted">Bruger <code><?= h($GLOBALS['config']['drf_clubs_file'] ?? '') ?></code>.
-            Gem find-klubber-siden som HTML her, hvis live-hentning ikke er mulig.</p>
+        <p class="muted">Gem find-klubber-siden som HTML og upload den her, hvis live-hentning ikke er mulig.</p>
     </section>
 </div>
 
