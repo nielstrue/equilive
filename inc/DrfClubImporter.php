@@ -3,13 +3,16 @@ defined('APP') or die('Direkte adgang ikke tilladt');
 
 /**
  * Høster Dansk Ride Forbunds klubliste ("find-klubber") og bruger den til at
- * udfylde clubs.distrikt for dine eksisterende klubber.
+ * udfylde clubs.distrikt og clubs.postnr for dine eksisterende klubber - og
+ * opretter en ny klub for enhver DRF-klub der endnu ikke findes i clubs (fx
+ * fordi den aldrig har holdt et stævne i dine data), saa hele DRF-listen er
+ * repræsenteret.
  *
  * Kilden kan enten hentes live (curl) eller læses fra en gemt HTML-fil.
  * Hver kørsel er et fuldt snapshot: drf_clubs tømmes og genindlæses, og hver
  * DRF-klub forsøges matchet til en eksisterende klub på forkortelse
  * (clubs.club_key/forkort, som er det samme "ClubId" DRF bruger) og ellers på
- * normaliseret navn. clubs.distrikt sættes for match.
+ * normaliseret navn. clubs.distrikt og clubs.postnr sættes for match.
  *
  * HTML-struktur (pr. 2026):
  *   <table> ... <thead><tr><th>Distrikt NN</th></tr></thead>
@@ -83,8 +86,8 @@ class DrfClubImporter
                     club_id=VALUES(club_id), harvested_at=NOW()'
             );
 
-            $matchedClubs   = [];
-            $unmatchedNames = [];
+            $matchedClubs  = [];
+            $createdClubs  = [];
             foreach ($records as $r) {
                 $norm    = $this->norm($r['navn']);
                 $clubId  = null;
@@ -96,7 +99,20 @@ class DrfClubImporter
                 if ($clubId !== null) {
                     $matchedClubs[$clubId] = true;
                 } else {
-                    $unmatchedNames[$norm] = true;
+                    // Ny klub - findes hverken paa forkortelse eller navn i forvejen.
+                    // Oprettes saa hele DRF-listen er repræsenteret, ogsaa klubber
+                    // der (endnu) ikke har holdt et stævne i vores data.
+                    $clubKey = $r['forkort'] !== null ? $r['forkort'] : ('navn:' . $r['navn']);
+                    $this->db->run(
+                        'INSERT INTO clubs (club_key, forkort, navn, distrikt, postnr) VALUES (?, ?, ?, ?, ?)',
+                        [$clubKey, $r['forkort'], $r['navn'], $r['distrikt'], $r['postnr']]
+                    );
+                    $clubId = (int)$this->db->lastId();
+                    if ($r['forkort'] !== null) {
+                        $byKey[mb_strtoupper($r['forkort'], 'UTF-8')] = $clubId;
+                    }
+                    $byNorm[$norm] = $clubId;
+                    $createdClubs[$clubId] = true;
                 }
                 $ins->execute([
                     $r['navn'], $norm, $r['forkort'], $r['distrikt'],
@@ -104,9 +120,9 @@ class DrfClubImporter
                 ]);
             }
 
-            // Udfyld distrikt for matchede klubber.
+            // Udfyld distrikt og postnummer for matchede klubber.
             $this->db->run(
-                'UPDATE clubs c JOIN drf_clubs d ON d.club_id = c.id SET c.distrikt = d.distrikt'
+                'UPDATE clubs c JOIN drf_clubs d ON d.club_id = c.id SET c.distrikt = d.distrikt, c.postnr = d.postnr'
             );
 
             // Log kørslen.
@@ -123,9 +139,9 @@ class DrfClubImporter
         }
 
         return [
-            'rows'            => count($records),
-            'matched_clubs'   => count($matchedClubs),
-            'unmatched_names' => count($unmatchedNames),
+            'rows'          => count($records),
+            'matched_clubs' => count($matchedClubs),
+            'created_clubs' => count($createdClubs),
         ];
     }
 

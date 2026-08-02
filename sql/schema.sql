@@ -39,8 +39,12 @@ CREATE TABLE IF NOT EXISTS clubs (
     forkort   VARCHAR(40)  NULL,
     navn      VARCHAR(255) NOT NULL,
     distrikt  VARCHAR(60)  NULL,             -- fra DRF's klubliste (find-klubber)
+    postnr    VARCHAR(12)  NULL,             -- fra DRF's klubliste (find-klubber)
+    status    ENUM('aktiv','ophoert') NOT NULL DEFAULT 'aktiv', -- klubbens livscyklus - paavirker
+                                                                 -- IKKE historiske stævner/statistik
     PRIMARY KEY (id),
-    UNIQUE KEY uq_clubs_key (club_key)
+    UNIQUE KEY uq_clubs_key (club_key),
+    KEY idx_clubs_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_danish_ci;
 
 -- ---------- Stævner ----------
@@ -57,12 +61,17 @@ CREATE TABLE IF NOT EXISTS shows (
     top_code     VARCHAR(4)   NULL,
     has_lower    TINYINT(1)   NOT NULL DEFAULT 0,
     prop_unknown TINYINT(1)   NOT NULL DEFAULT 0,
+    status       ENUM('aktiv','udelukket') NOT NULL DEFAULT 'aktiv', -- 'udelukket' holder stævnet helt ude af
+                                                                      -- statistikker/opgørelser (se Stats.php),
+                                                                      -- fx et fejlagtigt importeret udenlandsk stævne
+    status_note  VARCHAR(255) NULL,      -- fritekst-begrundelse for udelukkelse
     detail_harvested_at DATETIME NULL,     -- sidst hentet klassedetaljer (hest/pony, svh) fra DRF
     PRIMARY KEY (id),
     UNIQUE KEY uq_shows_natkey (natural_key),
     KEY idx_shows_prop (prop),
     KEY idx_shows_aar (aar),
     KEY idx_shows_club (club_id),
+    KEY idx_shows_status (status),
     CONSTRAINT fk_shows_club FOREIGN KEY (club_id) REFERENCES clubs(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_danish_ci;
 
@@ -94,9 +103,11 @@ CREATE TABLE IF NOT EXISTS officials (
     navn       VARCHAR(255) NOT NULL,
     status     ENUM('aktiv','ikke_aktiv','kun_e_niveau','fei_official') NOT NULL DEFAULT 'aktiv', -- sættes manuelt: alder/dødsfald, uuddannet klubdommer (kun E-niveau), hhv. FEI-official uden match paa DRF-listen
     drf_listed TINYINT(1)   NOT NULL DEFAULT 0,   -- fundet paa DRF's officielle liste
+    fei_listed TINYINT(1)   NOT NULL DEFAULT 0,   -- fundet paa FEI's officielle liste
     PRIMARY KEY (id),
     UNIQUE KEY uq_officials_navn (navn),
     KEY idx_officials_drf (drf_listed),
+    KEY idx_officials_fei (fei_listed),
     KEY idx_officials_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_danish_ci;
 
@@ -123,11 +134,16 @@ CREATE TABLE IF NOT EXISTS assignments (
     class_id    INT UNSIGNED NOT NULL,
     official_id INT UNSIGNED NOT NULL,
     rolle       VARCHAR(60)  NOT NULL,
+    orig_rolle  VARCHAR(60)  NOT NULL, -- rollen som CSV'en oprindelig satte den til (se Importer::upsertAssignment) -
+                                        -- bruges til at genkende rækken ved genindlæsning, saa en manuel rolleret-
+                                        -- telse i class.php ikke bliver overskrevet/duplikeret naar Equipe stadig
+                                        -- eksporterer den oprindelige (forkerte) rolle
     nummer      VARCHAR(40)  NULL,
     PRIMARY KEY (id),
     UNIQUE KEY uq_assign (class_id, official_id, rolle),
     KEY idx_assign_official (official_id),
     KEY idx_assign_class (class_id),
+    KEY idx_assign_orig (class_id, official_id, orig_rolle),
     CONSTRAINT fk_assign_class    FOREIGN KEY (class_id)    REFERENCES classes(id)   ON DELETE CASCADE,
     CONSTRAINT fk_assign_official FOREIGN KEY (official_id) REFERENCES officials(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_danish_ci;
@@ -193,6 +209,43 @@ CREATE TABLE IF NOT EXISTS drf_clubs (
     KEY idx_drf_clubs_club (club_id),
     CONSTRAINT fk_drf_clubs_club FOREIGN KEY (club_id) REFERENCES clubs(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_danish_ci;
+
+-- ---------- FEI officials-liste (høstet fra FEI's officials-PDF'er) ----------
+-- En person kan have flere funktioner (discipliner/roller/niveauer), derfor
+-- to tabeller: personen (fei_officials, PK = FEI's eget person-id) og
+-- funktionerne (fei_official_functions). Matchning til officials sker på
+-- official_id, analogt til drf_officials.official_id (se FeiOfficialMatcher).
+CREATE TABLE IF NOT EXISTS fei_officials (
+    fei_id               BIGINT UNSIGNED NOT NULL COMMENT 'FEI person ID',
+    last_name            VARCHAR(120)  NOT NULL,
+    first_name           VARCHAR(120)  NOT NULL DEFAULT '',
+    nf                   VARCHAR(80)   NOT NULL COMMENT 'National Federation / land',
+    languages_spoken     VARCHAR(160)  NULL,
+    languages_understood VARCHAR(160)  NULL,
+    can_officiate        TINYINT(1)    NOT NULL DEFAULT 1 COMMENT '0 = maerket * paa FEI-listen',
+    official_id          INT UNSIGNED  NULL COMMENT 'matchet official (hvis fundet)',
+    updated_at           TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (fei_id),
+    KEY idx_fei_officials_nf (nf),
+    KEY idx_fei_officials_name (last_name, first_name),
+    KEY idx_fei_official (official_id),
+    CONSTRAINT fk_fei_official FOREIGN KEY (official_id) REFERENCES officials(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS fei_official_functions (
+    id            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    fei_id        BIGINT UNSIGNED NOT NULL,
+    discipline    VARCHAR(40) NOT NULL COMMENT 'Jumping, Eventing, Driving, ...',
+    function_name VARCHAR(60) NOT NULL COMMENT 'Judge, Course Designer, Steward, ...',
+    level         VARCHAR(4)  NOT NULL COMMENT 'FEI-niveau: 1-4, eller N (national)',
+    status        ENUM('active','cannot_officiate','assistant_only') NOT NULL DEFAULT 'active',
+    source_file   VARCHAR(100) NULL,
+    list_date     DATE         NULL,
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_fei_official_function (fei_id, discipline, function_name),
+    KEY idx_fei_fn_lookup (discipline, function_name, level),
+    CONSTRAINT fk_fei_off_fn_official FOREIGN KEY (fei_id) REFERENCES fei_officials(fei_id) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------- Importlog ----------
 CREATE TABLE IF NOT EXISTS imports (

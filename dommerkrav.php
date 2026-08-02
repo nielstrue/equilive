@@ -8,8 +8,10 @@ $result = $stats->springdommerKravStatus();
 $years  = $result['years'];
 $rows   = $result['rows'];
 
-render_header('Dommerkrav', 'dommerkrav');
+render_header('Dommerkrav', 'status_krav');
 ?>
+<p class="muted"><a href="<?= h(url('status_krav.php')) ?>">← Opretholdelse af status</a> ·
+    <strong>Springdommer</strong> · <a href="<?= h(url('banedesignerkrav.php')) ?>">Banedesigner</a></p>
 <h1>Dommerkrav - springning</h1>
 <p class="muted">Viser om springdommere (niveau D/C/B/A) opfylder DRF's aktivitetskrav for at
     opretholde niveauet, ud fra dømte stævner registreret i Equilive
@@ -20,8 +22,9 @@ render_header('Dommerkrav', 'dommerkrav');
     <ul>
         <li>Kun rollen <code>show_jumping_judge</code> tælles med. Springdommer-D's alternative vej
             ("assistent til C-stævner") indgår derfor ikke.</li>
-        <li>Et stævnes niveau er stævnets samlede (højeste) niveau, ikke nødvendigvis niveauet på den
-            konkrete klasse der blev dømt.</li>
+        <li>Et stævnes niveau her er den højeste springklasse i stævnet - ved et blandet stævne (fx
+            dressur + spring samme dag) tæller stævnet altså med på sit eget springniveau, uafhængig af
+            niveauet på en evt. dressurklasse i samme stævne.</li>
         <li>Totalkravene for C/B/A vurderes først for vinduet forrige år + indeværende år. Er kravet
             ikke opfyldt dér, vises <span class="badge" style="background:#e67e22;color:#fff">Opmærksom</span>
             (det kan stadig nås inden årets udgang), og der tjekkes samtidig om kravet var opfyldt i de

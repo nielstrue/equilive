@@ -61,6 +61,8 @@ table.data tbody tr:last-child td{border-bottom:none}
 table.data tr:hover td{background:#f8fafb}
 .r{text-align:right !important}
 .small{font-size:.82rem;color:#404b56}
+.nowrap{white-space:nowrap}
+.tight{padding-left:.35rem !important;padding-right:.35rem !important}
 
 table.kv{border-collapse:collapse}
 table.kv th{text-align:left;color:var(--muted);font-weight:600;padding:.3rem 1rem .3rem 0;vertical-align:top}
@@ -93,7 +95,7 @@ table.kv td{padding:.3rem 0}
 .dropdown-check-panel label:hover{background:var(--bg)}
 .dropdown-check-panel input{margin:0;accent-color:var(--brand)}
 .btn{display:inline-block;background:var(--brand);color:#fff;border:none;border-radius:6px;
-  padding:.5rem .95rem;font-size:.95rem;cursor:pointer}
+  padding:.5rem .95rem;font:inherit;font-size:.95rem;line-height:1.2;vertical-align:middle;cursor:pointer}
 .btn:hover{background:var(--brand-d);text-decoration:none;color:#fff}
 
 .badge{display:inline-block;padding:.05rem .4rem;border-radius:5px;font-size:.8rem;font-weight:700}
@@ -115,6 +117,7 @@ code{background:#eceff1;padding:.05rem .35rem;border-radius:4px;font-size:.9em}
 
 .foot{max-width:1100px;margin:2rem auto;padding:1rem 1.2rem;color:var(--muted);
   font-size:.85rem;border-top:1px solid var(--line)}
+.foot-highlight{color:var(--brand);font-weight:700}
 
 /* DRF */
 .badge-drf{background:#1f6f54;color:#fff}

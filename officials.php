@@ -4,7 +4,7 @@ require __DIR__ . '/inc/layout.php';
 require_login();
 
 $search       = trim($_GET['q'] ?? '');
-$sort         = $_GET['sort'] ?? 'staevner';
+$sort         = $_GET['sort'] ?? 'navn';
 $selectedAar  = array_map('strval', (array)($_GET['aar'] ?? []));
 $selectedDist = array_map('strval', (array)($_GET['distrikt'] ?? []));
 $selectedDisc = array_map('strval', (array)($_GET['disciplin'] ?? []));
@@ -43,6 +43,7 @@ render_header('Officials', 'officials');
         <option value="klasser"  <?= $sort==='klasser' ?'selected':'' ?>>Flest klasser</option>
         <option value="ryttere"  <?= $sort==='ryttere' ?'selected':'' ?>>Flest ryttere</option>
         <option value="navn"     <?= $sort==='navn'    ?'selected':'' ?>>Navn (A-Å)</option>
+        <option value="distrikt" <?= $sort==='distrikt'?'selected':'' ?>>Distrikt</option>
     </select>
     <button class="btn" type="submit">Filtrér</button>
 </form>

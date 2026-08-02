@@ -31,6 +31,7 @@ $roles  = $stats->officialRoles($id, $selectedAar);
 $levels = $stats->officialLevels($id, $selectedAar);
 $shows  = $stats->officialShows($id, $selectedAar);
 $drfRoles = $stats->officialDrfRoles($id);
+$feiFunctions = $stats->officialFeiFunctions($id);
 $aliases  = $stats->officialAliases($id);
 
 $totRyttere = 0;
@@ -51,7 +52,7 @@ render_header($off['navn'], 'officials');
         <select name="status">
             <option value="aktiv"        <?= $off['status']==='aktiv'        ? 'selected' : '' ?>>Aktiv</option>
             <option value="kun_e_niveau" <?= $off['status']==='kun_e_niveau' ? 'selected' : '' ?>>Kun E-niveau (uuddannet klubdommer)</option>
-            <option value="fei_official" <?= $off['status']==='fei_official' ? 'selected' : '' ?>>FEI official (ikke fundet paa DRF-listen)</option>
+            <option value="fei_official" <?= $off['status']==='fei_official' ? 'selected' : '' ?>>FEI official (ikke fundet på DRF-listen)</option>
             <option value="ikke_aktiv"   <?= $off['status']==='ikke_aktiv'   ? 'selected' : '' ?>>Ikke aktiv</option>
         </select>
     </label>
@@ -88,6 +89,31 @@ render_header($off['navn'], 'officials');
     <?php endif; ?>
 </section>
 
+<section class="drf-box">
+    <h2>FEI officials-liste
+        <?= $off['fei_listed'] ? '<span class="badge badge-drf">✓ på listen</span>' : '<span class="badge badge-muted">ikke fundet</span>' ?>
+    </h2>
+    <?php if ($feiFunctions): ?>
+        <?php $feiStatusLabel = ['active' => 'Aktiv', 'cannot_officiate' => 'Kan ikke officiere', 'assistant_only' => 'Kun assistent']; ?>
+        <table class="data">
+            <thead><tr><th>Disciplin</th><th>Funktion</th><th>Niveau</th><th>Status</th></tr></thead>
+            <tbody>
+            <?php foreach ($feiFunctions as $fr): ?>
+                <tr>
+                    <td><?= h($fr['discipline']) ?></td>
+                    <td><?= h($fr['function_name']) ?></td>
+                    <td><?= h($fr['level']) ?></td>
+                    <td><?= h($feiStatusLabel[$fr['status']] ?? $fr['status']) ?></td>
+                </tr>
+            <?php endforeach; ?>
+            </tbody>
+        </table>
+    <?php else: ?>
+        <p class="muted">Denne official er ikke matchet på den høstede FEI-liste.
+            Det kan skyldes stavning/navneforskelle – se <a href="<?= h(url('fei.php')) ?>">FEI-afstemningen</a>.</p>
+    <?php endif; ?>
+</section>
+
 <div class="grid2">
     <section>
         <h2>Roller</h2>
@@ -117,20 +143,20 @@ render_header($off['navn'], 'officials');
 <h2>Stævner</h2>
 <table class="data">
     <thead>
-        <tr><th>Dato</th><th>Stævne</th><th>Klub</th><th>Disciplin</th><th>Niveau</th>
-            <th class="r">Klasser</th><th class="r">Ryttere</th><th>Roller</th></tr>
+        <tr><th class="nowrap">Dato</th><th>Stævne</th><th>Klub</th><th>Disciplin</th><th class="tight">Niveau</th>
+            <th class="r tight">Klasser</th><th class="r tight">Ryttere</th><th class="tight">Roller</th></tr>
     </thead>
     <tbody>
     <?php foreach ($shows as $s): ?>
         <tr>
-            <td><?= dk_date($s['dato']) ?></td>
+            <td class="nowrap"><?= dk_date($s['dato']) ?></td>
             <td><a href="<?= h(url('show.php?id=' . (int)$s['id'])) ?>"><?= h($s['prop']) ?></a></td>
             <td><?= h($s['klub'] ?? '–') ?></td>
-            <td><?= h($s['disciplin'] ?? '') ?></td>
-            <td><?= level_badge($s['top_code'], $s['has_lower']) ?></td>
-            <td class="r"><?= (int)$s['klasser'] ?></td>
-            <td class="r"><?= number_format((int)$s['ryttere'], 0, ',', '.') ?></td>
-            <td class="small"><?= h($s['roller']) ?></td>
+            <td><?= h($s['discipliner'] ?? $s['disciplin'] ?? '') ?></td>
+            <td class="tight"><?= level_badge($s['top_code'], $s['has_lower']) ?></td>
+            <td class="r tight"><?= (int)$s['klasser'] ?></td>
+            <td class="r tight"><?= number_format((int)$s['ryttere'], 0, ',', '.') ?></td>
+            <td class="small tight"><?= h($s['roller']) ?></td>
         </tr>
     <?php endforeach; ?>
     </tbody>

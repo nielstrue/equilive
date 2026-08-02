@@ -87,7 +87,10 @@ class Importer
                 $classId    = $this->getClass($showId, $row);
                 $officialId = $this->getOfficial($row['official']);
 
-                $isNew = $this->upsertAssignment($classId, $officialId, $row['rolle'], $row['nummer']);
+                $isNew = $this->upsertAssignment(
+                    $classId, $officialId, $row['rolle'], $row['nummer'],
+                    $row['disciplin'], $this->isStilspringning($row['klassenavn'])
+                );
                 if ($isNew) {
                     $summary['assign_new']++;
                 } else {
@@ -239,7 +242,7 @@ class Importer
         // Kendt niveau? Ellers gem NULL (rå værdi kan være tom/sponsortekst ved fejl).
         $niveau = isset(Levels::MAP[$row['niveau']]) ? $row['niveau'] : null;
         $starter = is_numeric($row['starter']) ? (int)$row['starter'] : null;
-        $stil = (strpos($row['klassenavn'], 'S2') !== false) ? 1 : 0;
+        $stil = $this->isStilspringning($row['klassenavn']) ? 1 : 0;
 
         $id = $this->db->scalar('SELECT id FROM classes WHERE natural_key = ?', [$natKey]);
         if ($id === false) {
@@ -299,23 +302,66 @@ class Importer
         return trim($navn);
     }
 
-    /** @return bool true hvis en ny tildeling blev oprettet. */
-    private function upsertAssignment(int $classId, int $officialId, string $rolle, string $nummer): bool
+    /**
+     * Opretter/opdaterer en tildeling. Matcher på orig_rolle (den rolle CSV'en
+     * oprindelig satte) i stedet for rolle (den viste rolle), saa en manuel
+     * rolleret­telse i class.php genkendes ved næste import og ikke bliver
+     * duplikeret med den oprindelige (uredigerede) rolle fra kilden - se
+     * sql/migrate_add_orig_rolle.sql. rolle røres derfor aldrig her efter
+     * første oprettelse.
+     *
+     * @return bool true hvis en ny tildeling blev oprettet.
+     */
+    private function upsertAssignment(int $classId, int $officialId, string $rolle, string $nummer, string $disciplin, bool $isStilspringning): bool
     {
         $rolle = $rolle === '' ? '(ukendt)' : $rolle;
+        $displayRolle = $this->normalizeRolle($disciplin, $rolle, $isStilspringning);
         $exists = $this->db->scalar(
-            'SELECT id FROM assignments WHERE class_id = ? AND official_id = ? AND rolle = ?',
+            'SELECT id FROM assignments WHERE class_id = ? AND official_id = ? AND orig_rolle = ?',
             [$classId, $officialId, $rolle]
         );
         if ($exists === false) {
             $this->db->run(
-                'INSERT INTO assignments (class_id, official_id, rolle, nummer) VALUES (?, ?, ?, ?)',
-                [$classId, $officialId, $rolle, $nummer !== '' ? $nummer : null]
+                'INSERT INTO assignments (class_id, official_id, rolle, orig_rolle, nummer) VALUES (?, ?, ?, ?, ?)',
+                [$classId, $officialId, $displayRolle, $rolle, $nummer !== '' ? $nummer : null]
             );
             return true;
         }
         $this->db->run('UPDATE assignments SET nummer = ? WHERE id = ?', [$nummer !== '' ? $nummer : null, $exists]);
         return false;
+    }
+
+    /**
+     * Datavask ved import: på en springklasse (disciplin = show_jumping)
+     * dækker CSV-rollerne 'judge' og 'chief_judge' reelt springdommeren -
+     * gemmes derfor som 'show_jumping_judge', den rolle DRF's aktivitetskrav
+     * (Stats::springdommerKravStatus) og øvrig statistik kigger efter.
+     * På en stilspringningsklasse (stilspringning = 1) dækker 'dressage_judge'
+     * tilsvarende reelt stildommeren og gemmes som 'style_judge' - uden for
+     * stilspringning er en dressage_judge-rolle mere tvetydig og rettes IKKE
+     * automatisk. 'course_designer' er en generisk rolle på tværs af
+     * discipliner (bruges også til eventing/dressur) - på en springklasse
+     * dækker den reelt banebyggeren og gemmes som 'show_jumping_course_designer'.
+     * Den oprindelige CSV-rolle bevares uændret i orig_rolle.
+     */
+    private function normalizeRolle(string $disciplin, string $rolle, bool $isStilspringning): string
+    {
+        if ($disciplin === 'show_jumping' && in_array($rolle, ['judge', 'chief_judge'], true)) {
+            return 'show_jumping_judge';
+        }
+        if ($disciplin === 'show_jumping' && $isStilspringning && $rolle === 'dressage_judge') {
+            return 'style_judge';
+        }
+        if ($disciplin === 'show_jumping' && $rolle === 'course_designer') {
+            return 'show_jumping_course_designer';
+        }
+        return $rolle;
+    }
+
+    /** "S2" i klassenavnet markerer en stilspringningsklasse. */
+    private function isStilspringning(string $klassenavn): bool
+    {
+        return strpos($klassenavn, 'S2') !== false;
     }
 
     /**

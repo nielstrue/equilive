@@ -102,9 +102,10 @@ render_header('Import', 'import');
         <strong>DRF-klubliste opdateret.</strong>
         <ul>
             <li>Klubber på listen: <?= number_format($drfClubResult['rows'], 0, ',', '.') ?></li>
-            <li>Matchet til dine klubber (distrikt udfyldt): <?= number_format($drfClubResult['matched_clubs'], 0, ',', '.') ?></li>
-            <li>DRF-klubber uden match: <?= number_format($drfClubResult['unmatched_names'], 0, ',', '.') ?></li>
+            <li>Matchet til eksisterende klubber (distrikt udfyldt): <?= number_format($drfClubResult['matched_clubs'], 0, ',', '.') ?></li>
+            <li>Nye klubber oprettet: <?= number_format($drfClubResult['created_clubs'], 0, ',', '.') ?></li>
         </ul>
+        <a class="btn" href="<?= h(url('clubs.php')) ?>">Se klubber →</a>
     </div>
 <?php endif; ?>
 

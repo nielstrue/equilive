@@ -42,15 +42,18 @@ function render_header(string $title, string $active = ''): void
     $nav = [
         ''          => 'Forside',
         'officials' => 'Officials',
-        'dommerkrav' => 'Dommerkrav',
+        'status_krav' => 'Opretholdelse af status',
+        'officials_uden_rolle' => 'Uden rolle',
         'roles'     => 'Roller',
         'clubs'     => 'Klubber',
         'shows'     => 'Stævner',
         'drf'       => 'DRF-liste',
+        'fei'       => 'FEI-liste',
     ];
     if (($user['role'] ?? '') === 'admin') {
         $nav['officials_duplicates'] = 'Dubletter';
         $nav['officials_merge'] = 'Flet officials';
+        $nav['clubs_merge'] = 'Flet klubber';
         $nav['import'] = 'Import';
     }
     ?><!DOCTYPE html>
@@ -83,7 +86,7 @@ function render_footer(): void
     ?>
 </main>
 <footer class="foot">
-    <span>Equilive · statistik for danske ridestævner</span>
+    <span>Equilive · statistik for <strong class="foot-highlight">officials</strong> ved danske ridestævner</span>
 </footer>
 </body>
 </html>
@@ -106,6 +109,28 @@ function official_status_badge(string $status): string
         'ikke_aktiv'   => ['Ikke aktiv', 'badge-muted'],
         'kun_e_niveau' => ['Kun E-niveau', 'badge-lvl badge-E'],
         'fei_official' => ['FEI official', 'badge-lvl badge-FEI'],
+    ];
+    [$label, $class] = $map[$status] ?? [$status, 'badge-muted'];
+    return '<span class="badge ' . $class . '">' . h($label) . '</span>';
+}
+
+/** Lille badge for et stævnes livscyklus-status (aktiv/udelukket). */
+function show_status_badge(string $status): string
+{
+    $map = [
+        'aktiv'     => ['Aktiv', 'badge-drf'],
+        'udelukket' => ['Udelukket', 'badge-warn'],
+    ];
+    [$label, $class] = $map[$status] ?? [$status, 'badge-muted'];
+    return '<span class="badge ' . $class . '">' . h($label) . '</span>';
+}
+
+/** Lille badge for en klubs livscyklus-status (aktiv/ophoert). */
+function club_status_badge(string $status): string
+{
+    $map = [
+        'aktiv'   => ['Aktiv', 'badge-drf'],
+        'ophoert' => ['Ophørt', 'badge-muted'],
     ];
     [$label, $class] = $map[$status] ?? [$status, 'badge-muted'];
     return '<span class="badge ' . $class . '">' . h($label) . '</span>';

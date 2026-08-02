@@ -33,7 +33,7 @@ try {
 }
 
 printf(
-    "Klubber på DRF-listen: %d, matchet til dine klubber: %d, uden match: %d\n",
-    $r['rows'], $r['matched_clubs'], $r['unmatched_names']
+    "Klubber på DRF-listen: %d, matchet til eksisterende klubber: %d, nye klubber oprettet: %d\n",
+    $r['rows'], $r['matched_clubs'], $r['created_clubs']
 );
 exit(0);

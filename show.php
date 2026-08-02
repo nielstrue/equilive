@@ -16,6 +16,7 @@ if (!$s) {
 
 $error = null;
 $detailResult = null;
+$statusError = null;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'harvest_details') {
     try {
@@ -24,20 +25,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'harve
     } catch (Throwable $e) {
         $error = $e->getMessage();
     }
+} elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'set_status') {
+    $nyStatus = $_POST['status'] ?? '';
+    $note     = trim($_POST['status_note'] ?? '');
+    if (!in_array($nyStatus, ['aktiv', 'udelukket'], true)) {
+        $statusError = 'Ukendt status.';
+    } else {
+        db()->run('UPDATE shows SET status = ?, status_note = ? WHERE id = ?', [$nyStatus, $note !== '' ? $note : null, $id]);
+        $s['status'] = $nyStatus;
+        $s['status_note'] = $note !== '' ? $note : null;
+    }
 }
 
 $classes = $stats->showClasses($id);
 $ryttere = array_sum(array_map(fn($c) => (int)$c['starter'], $classes));
+$discipliner = array_values(array_unique(array_filter(array_column($classes, 'disciplin'))));
+sort($discipliner);
+
+// Bevar det filter shows.php blev tilgaaet med, saa "← Alle stævner" foerer tilbage
+// til den samme filtrerede/sorterede liste i stedet for at nulstille den.
+$backQuery = http_build_query(array_diff_key($_GET, ['id' => true]));
+$backUrl = url('shows.php') . ($backQuery !== '' ? '?' . $backQuery : '');
 
 render_header($s['prop'], 'shows');
 ?>
-<p><a href="<?= h(url('shows.php')) ?>">← Alle stævner</a></p>
-<h1><?= h($s['prop']) ?> <?= level_badge($s['top_code'], $s['has_lower']) ?></h1>
+<p><a href="<?= h($backUrl) ?>">← Alle stævner</a></p>
+<h1><?= h($s['prop']) ?> <?= level_badge($s['top_code'], $s['has_lower']) ?> <?= show_status_badge($s['status']) ?></h1>
+
+<?php if ($s['status'] === 'udelukket'): ?>
+    <div class="notice">Dette stævne er udelukket fra alle statistikker, opgørelser og officials-visninger.
+        <?php if ($s['status_note']): ?>Begrundelse: <?= h($s['status_note']) ?><?php endif; ?></div>
+<?php endif; ?>
+
+<?php if ($statusError): ?><div class="notice error"><?= h($statusError) ?></div><?php endif; ?>
+<form method="post" style="display:flex;gap:.4rem;align-items:center;margin:.6rem 0;flex-wrap:wrap">
+    <input type="hidden" name="action" value="set_status">
+    <label class="muted" style="font-size:.85rem">Status:
+        <select name="status">
+            <option value="aktiv"     <?= $s['status']==='aktiv'     ? 'selected' : '' ?>>Aktiv</option>
+            <option value="udelukket" <?= $s['status']==='udelukket' ? 'selected' : '' ?>>Udelukket (tæller ikke med nogen steder)</option>
+        </select>
+    </label>
+    <input type="text" name="status_note" placeholder="Begrundelse (valgfri)" size="30" value="<?= h($s['status_note'] ?? '') ?>">
+    <button class="btn" type="submit">Gem</button>
+</form>
 
 <table class="kv">
     <tr><th>Klub</th><td><?= h($s['klub'] ?? '–') ?><?= $s['forkort'] ? ' (' . h($s['forkort']) . ')' : '' ?></td></tr>
     <tr><th>Dato</th><td><?= dk_date($s['dato']) ?></td></tr>
-    <tr><th>Disciplin</th><td><?= h($s['disciplin'] ?? '–') ?></td></tr>
+    <tr><th>Disciplin</th><td><?= h($discipliner ? implode(' / ', $discipliner) : ($s['disciplin'] ?? '–')) ?></td></tr>
     <tr><th>Stævneniveau</th><td><?= h(Levels::label($s['top_slug'])) ?><?= $s['has_lower'] ? ' – har også klasser på lavere niveau' : '' ?></td></tr>
     <tr><th>Klasser</th><td><?= count($classes) ?></td></tr>
     <tr><th>Startende ryttere i alt</th><td><?= number_format($ryttere, 0, ',', '.') ?></td></tr>
