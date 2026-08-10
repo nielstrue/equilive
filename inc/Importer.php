@@ -197,6 +197,17 @@ class Importer
         return $this->clubCache[$key] = (int)$id;
     }
 
+    /**
+     * Kun props på formen "PropNNNNN" kan slås op på DRF (se
+     * ShowDetailImporter) - ældre/andre kilder har af og til leveret et bart
+     * tal, et UUID eller "EQ_ID_..." i stedet, som ikke er en gyldig DRF-nøgle
+     * selvom feltet ikke er tomt.
+     */
+    private function hasUsableProp(string $prop): bool
+    {
+        return (bool)preg_match('/^Prop\d+$/i', $prop);
+    }
+
     private function getShow(array $row, int $clubId, ?int $year = null): int
     {
         // Naturlig nøgle: prop|forkort|dato|klub (så UNKNOWN-prop ikke smelter sammen).
@@ -219,7 +230,7 @@ class Importer
                     $clubId,
                     $iso,
                     $aar,
-                    ($row['prop'] === '' || strtoupper($row['prop']) === 'UNKNOWN') ? 1 : 0,
+                    $this->hasUsableProp($row['prop']) ? 0 : 1,
                 ]
             );
             $id = $this->db->lastId();
@@ -320,6 +331,17 @@ class Importer
             'SELECT id FROM assignments WHERE class_id = ? AND official_id = ? AND orig_rolle = ?',
             [$classId, $officialId, $rolle]
         );
+        if ($exists === false) {
+            // Samme official kan optræde med to forskellige CSV-roller i samme
+            // klasse, der normaliseres til samme viste rolle (fx 'judge' og
+            // 'chief_judge' => 'show_jumping_judge'). Uden dette tjek ville
+            // begge rammes af INSERT og krænke assignments.uq_assign
+            // (class_id, official_id, rolle).
+            $exists = $this->db->scalar(
+                'SELECT id FROM assignments WHERE class_id = ? AND official_id = ? AND rolle = ?',
+                [$classId, $officialId, $displayRolle]
+            );
+        }
         if ($exists === false) {
             $this->db->run(
                 'INSERT INTO assignments (class_id, official_id, rolle, orig_rolle, nummer) VALUES (?, ?, ?, ?, ?)',

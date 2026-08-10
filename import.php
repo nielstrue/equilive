@@ -180,6 +180,12 @@ render_header('Import', 'import');
     </section>
 </div>
 
+<h2>DRF-klassedetaljer (hest/pony, sværhedsgrad)</h2>
+<p><a class="btn" href="<?= h(url('import_show_details.php')) ?>">Bulk-backfill af klassedetaljer →</a></p>
+<p class="muted">Henter hest/pony og sværhedsgrad pr. klasse fra DRF for stævner der endnu mangler det,
+    i håndkørte batches direkte fra browseren.</p>
+<p><a href="<?= h(url('migrate_flag_invalid_prop_shows.php')) ?>">Engangsmigrering: ret stævner med ugyldigt prop-id →</a></p>
+
 <h2>Importhistorik</h2>
 <?php $imports = (new Stats(db()))->imports(15); ?>
 <?php if ($imports): ?>

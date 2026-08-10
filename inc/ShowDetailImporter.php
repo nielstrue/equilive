@@ -31,6 +31,67 @@ class ShowDetailImporter
         $this->db = $db;
     }
 
+    /**
+     * Stævner der er kandidater til DRF-detaljehøstning (til bulk-backfill,
+     * se harvestBatch() og cli/import_show_details.php).
+     * @return array<int,array{id:int,prop:string,aar:?int}>
+     */
+    private function pending(array $years, bool $force, ?int $limit): array
+    {
+        $placeholders = implode(',', array_fill(0, count($years), '?'));
+        $sql = "SELECT id, prop, aar FROM shows
+                WHERE aar IN ($placeholders)
+                  AND prop_unknown = 0
+                  AND status = 'aktiv'"
+             . ($force ? '' : ' AND detail_harvested_at IS NULL')
+             . ' ORDER BY aar, id';
+        $rows = $this->db->all($sql, $years);
+        return $limit !== null ? array_slice($rows, 0, $limit) : $rows;
+    }
+
+    /** Antal stævner der (endnu) mangler DRF-detaljer for hvert år i $years. */
+    public function pendingCount(array $years): int
+    {
+        return count($this->pending($years, false, null));
+    }
+
+    /**
+     * Kør detalje-høstning for op til $limit stævner i $years (ældste år/id
+     * først), med $delayMs pause mellem hvert DRF-opslag. Bruges både af
+     * cli/import_show_details.php (fuld backfill) og af den admin-gaterede
+     * side import_show_details.php (håndkørt batch fra browseren, hvor et
+     * enkelt HTTP-kald ikke bør løbe i timevis).
+     *
+     * @return array{total:int,ok:int,failed:int,classes_matched:int,rows:array}
+     */
+    public function harvestBatch(array $years, ?int $limit, bool $force, int $delayMs = 300): array
+    {
+        $shows = $this->pending($years, $force, $limit);
+
+        $result = ['total' => count($shows), 'ok' => 0, 'failed' => 0, 'classes_matched' => 0, 'rows' => []];
+        foreach ($shows as $i => $show) {
+            $row = ['show_id' => (int)$show['id'], 'prop' => $show['prop'], 'aar' => $show['aar']];
+            try {
+                $r = $this->import((int)$show['id']);
+                $row['ok'] = true;
+                $row['classes_matched'] = $r['classes_matched'];
+                $row['classes_total'] = $r['classes_total'];
+                $result['ok']++;
+                $result['classes_matched'] += $r['classes_matched'];
+            } catch (Throwable $e) {
+                $row['ok'] = false;
+                $row['message'] = $e->getMessage();
+                $result['failed']++;
+            }
+            $result['rows'][] = $row;
+
+            if ($i < count($shows) - 1 && $delayMs > 0) {
+                usleep($delayMs * 1000);
+            }
+        }
+        return $result;
+    }
+
     public function import(int $showId): array
     {
         $show = $this->db->one('SELECT id, prop FROM shows WHERE id = ?', [$showId]);
