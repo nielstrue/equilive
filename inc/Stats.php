@@ -26,7 +26,7 @@ class Stats
             'classes'   => (int)$this->db->scalar(
                 "SELECT COUNT(*) FROM classes c JOIN shows s ON s.id = c.show_id WHERE s.status = 'aktiv'"
             ),
-            'officials' => (int)$this->db->scalar('SELECT COUNT(*) FROM officials'),
+            'officials' => (int)$this->db->scalar("SELECT COUNT(*) FROM officials WHERE status = 'aktiv'"),
             'assign'    => (int)$this->db->scalar(
                 "SELECT COUNT(*) FROM assignments a
                  JOIN classes c ON c.id = a.class_id
@@ -398,6 +398,31 @@ class Stats
              WHERE r.id IS NULL
              GROUP BY a.rolle
              ORDER BY antal DESC"
+        );
+    }
+
+    // ---------------- Import: roller der springes over ----------------
+
+    /** Roller der p.t. er ekskluderet fra fremtidige CSV-imports (se Importer::excludedRoles). */
+    public function importExcludedRoles(): array
+    {
+        return $this->db->all('SELECT id, rolle, created_at FROM import_excluded_roles ORDER BY rolle');
+    }
+
+    /**
+     * Raa rollenavne set i tidligere imports (assignments.orig_rolle), som
+     * endnu ikke er på eksklusionslisten - til et "vælg fra kendte roller"-
+     * dropdown på import_role_exclusions.php.
+     */
+    public function importableRoleCandidates(): array
+    {
+        return $this->db->all(
+            "SELECT a.orig_rolle AS rolle, COUNT(*) AS antal
+             FROM assignments a
+             LEFT JOIN import_excluded_roles e ON e.rolle = a.orig_rolle
+             WHERE e.id IS NULL
+             GROUP BY a.orig_rolle
+             ORDER BY a.orig_rolle"
         );
     }
 
@@ -1005,6 +1030,26 @@ class Stats
         );
     }
 
+    /**
+     * Officials og roller brugt paa et stævne - én raekke pr. official+rolle
+     * (samme official kan have flere roller), saa en forkert/uventet rolle
+     * er hurtig at faa oejnene paa foer man dykker ned i de enkelte klasser.
+     */
+    public function showOfficials(int $id): array
+    {
+        return $this->db->all(
+            "SELECT o.id AS official_id, o.navn, a.rolle,
+                    COUNT(DISTINCT a.class_id) AS klasser
+             FROM assignments a
+             JOIN classes c ON c.id = a.class_id
+             JOIN officials o ON o.id = a.official_id
+             WHERE c.show_id = ?
+             GROUP BY o.id, o.navn, a.rolle
+             ORDER BY o.navn, a.rolle",
+            [$id]
+        );
+    }
+
     /** Klasser i et stævne med niveau, ryttere og officials. */
     public function showClasses(int $id): array
     {
@@ -1194,6 +1239,19 @@ class Stats
              JOIN officials o ON o.id = a.official_id
              WHERE a.class_id = ?
              ORDER BY o.navn",
+            [$id]
+        );
+    }
+
+    /** Ryttere der har startet i én klasse (høstet fra DRF's klasseresultat-side). */
+    public function classRiders(int $id): array
+    {
+        return $this->db->all(
+            "SELECT r.id, r.navn, r.drf_rider_id
+             FROM class_riders cr
+             JOIN riders r ON r.id = cr.rider_id
+             WHERE cr.class_id = ?
+             ORDER BY r.navn",
             [$id]
         );
     }
@@ -1533,6 +1591,76 @@ class Stats
              JOIN fei_officials o ON o.fei_id = f.fei_id
              WHERE o.nf = 'Denmark'
              ORDER BY f.discipline"
+        );
+    }
+
+    // ---------------- Ryttere (høstet fra DRF) ----------------
+
+    /** Oversigt over ryttere: navn, DRF-nummer, antal klasser, om supplerende data er hentet. */
+    public function ridersOverview(string $search = '', string $sort = 'navn'): array
+    {
+        $where = [];
+        $params = [];
+        if ($search !== '') {
+            $where[] = '(r.navn LIKE ? OR r.drf_rider_id LIKE ?)';
+            $params[] = "%$search%"; $params[] = "%$search%";
+        }
+        $w = $where ? ('WHERE ' . implode(' AND ', $where)) : '';
+
+        $order = [
+            'navn'    => 'r.navn ASC',
+            'klasser' => 'klasser DESC, r.navn ASC',
+        ][$sort] ?? 'r.navn ASC';
+
+        return $this->db->all(
+            "SELECT r.id, r.navn, r.drf_rider_id, r.detail_harvested_at,
+                    (SELECT COUNT(*) FROM class_riders cr WHERE cr.rider_id = r.id) AS klasser
+             FROM riders r
+             $w
+             ORDER BY $order",
+            $params
+        );
+    }
+
+    /** Én rytters stamdata. */
+    public function riderInfo(int $id): ?array
+    {
+        return $this->db->one('SELECT * FROM riders WHERE id = ?', [$id]);
+    }
+
+    /** Rytterlicens pr. stævnetype (B/C/D/FEI-Stævner osv.), høstet fra rytterens DRF-profil. */
+    public function riderLicenses(int $id): array
+    {
+        return $this->db->all(
+            'SELECT type, vaerdi FROM rider_licenses WHERE rider_id = ? ORDER BY type',
+            [$id]
+        );
+    }
+
+    /** Rytterkategorier (fx "Spring - Hest"), høstet fra rytterens DRF-profil. */
+    public function riderCategories(int $id): array
+    {
+        return $this->db->all(
+            'SELECT kategori, vaerdi FROM rider_categories WHERE rider_id = ? ORDER BY kategori',
+            [$id]
+        );
+    }
+
+    /** Klasser (og stævner) én rytter har startet i. */
+    public function riderClasses(int $id): array
+    {
+        return $this->db->all(
+            "SELECT c.id AS class_id, c.klassenavn, c.disciplin,
+                    l.code AS niveau_code, l.label AS niveau_label,
+                    s.id AS show_id, s.prop, s.dato, cl.navn AS klub
+             FROM class_riders cr
+             JOIN classes c ON c.id = cr.class_id
+             JOIN shows s ON s.id = c.show_id
+             LEFT JOIN levels l ON l.slug = c.niveau_slug
+             LEFT JOIN clubs cl ON cl.id = s.club_id
+             WHERE cr.rider_id = ?
+             ORDER BY s.dato DESC, c.klassenr + 0, c.klassenr",
+            [$id]
         );
     }
 

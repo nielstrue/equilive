@@ -94,10 +94,11 @@ $assignments     = $stats->classAssignments($id);
 $roles           = $stats->rolesForDiscipline($class['disciplin'] ?? '');
 $roleNames       = array_column($roles, 'navn');
 $activeOfficials = $stats->activeOfficials();
+$riders          = $stats->classRiders($id);
 
 render_header($class['klassenavn'], 'shows');
+back_link(url('show.php?id=' . (int)$class['show_id']), $class['prop']);
 ?>
-<p><a href="<?= h(url('show.php?id=' . (int)$class['show_id'])) ?>">← <?= h($class['prop']) ?></a></p>
 <h1><?= h($class['klassenavn']) ?> <?= level_badge($class['niveau_code']) ?></h1>
 
 <table class="kv">
@@ -136,7 +137,7 @@ render_header($class['klassenavn'], 'shows');
         }
         ?>
         <tr>
-            <td><a href="<?= h(url('official.php?id=' . (int)$a['official_id'])) ?>"><?= h($a['navn']) ?></a></td>
+            <td><a href="<?= h(url('official.php?id=' . (int)$a['official_id']) . '&' . from_params($class['klassenavn'])) ?>"><?= h($a['navn']) ?></a></td>
             <td>
                 <form method="post" style="display:flex;gap:.4rem">
                     <input type="hidden" name="action" value="update_rolle">
@@ -183,5 +184,23 @@ render_header($class['klassenavn'], 'shows');
     <input type="text" name="nummer" placeholder="Nummer (valgfri)" size="10">
     <button class="btn" type="submit">Tilføj</button>
 </form>
+
+<h2>Ryttere</h2>
+<?php if ($riders): ?>
+    <table class="data">
+        <thead><tr><th>Rytter</th><th>DRF-nummer</th></tr></thead>
+        <tbody>
+        <?php foreach ($riders as $r): ?>
+            <tr>
+                <td><a href="<?= h(url('rider.php?id=' . (int)$r['id']) . '&' . from_params($class['klassenavn'])) ?>"><?= h($r['navn']) ?></a></td>
+                <td><?= h($r['drf_rider_id']) ?></td>
+            </tr>
+        <?php endforeach; ?>
+        </tbody>
+    </table>
+<?php else: ?>
+    <p class="muted">Ingen ryttere hentet endnu - brug "Hent ryttere fra DRF" på stævnets side
+        (kræver status "Resultatbehandling færdig").</p>
+<?php endif; ?>
 <?php
 render_footer();

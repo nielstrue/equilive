@@ -66,6 +66,8 @@ CREATE TABLE IF NOT EXISTS shows (
                                                                       -- fx et fejlagtigt importeret udenlandsk stævne
     status_note  VARCHAR(255) NULL,      -- fritekst-begrundelse for udelukkelse
     detail_harvested_at DATETIME NULL,     -- sidst hentet klassedetaljer (hest/pony, svh) fra DRF
+    resultat_status     VARCHAR(60) NULL,  -- rå DRF-statustekst, fx "Resultatbehandling færdig" (fra samme høstning)
+    riders_harvested_at DATETIME NULL,     -- sidst hentet ryttere pr. klasse fra DRF
     PRIMARY KEY (id),
     UNIQUE KEY uq_shows_natkey (natural_key),
     KEY idx_shows_prop (prop),
@@ -95,6 +97,53 @@ CREATE TABLE IF NOT EXISTS classes (
     KEY idx_classes_niveau (niveau_slug),
     CONSTRAINT fk_classes_show  FOREIGN KEY (show_id)     REFERENCES shows(id) ON DELETE CASCADE,
     CONSTRAINT fk_classes_level FOREIGN KEY (niveau_slug) REFERENCES levels(slug)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_danish_ci;
+
+-- ---------- Ryttere (høstet fra DRF's klasseresultat-sider) ----------
+CREATE TABLE IF NOT EXISTS riders (
+    id                  INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    drf_rider_id        VARCHAR(20)  NOT NULL,  -- DRF's RiderId (kan indeholde bogstaver, fx "K091730")
+    navn                VARCHAR(255) NOT NULL,
+    detail_harvested_at DATETIME     NULL,      -- sidst hentet rytterlicens/-kategori (se RiderDetailImporter)
+    created_at          DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_riders_drf_id (drf_rider_id),
+    KEY idx_riders_navn (navn)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_danish_ci;
+
+-- ---------- Ryttere <-> klasser (hvilke ryttere startede i hvilke klasser) ----------
+CREATE TABLE IF NOT EXISTS class_riders (
+    id         INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    class_id   INT UNSIGNED NOT NULL,
+    rider_id   INT UNSIGNED NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_class_rider (class_id, rider_id),
+    KEY idx_class_riders_rider (rider_id),
+    CONSTRAINT fk_class_riders_class FOREIGN KEY (class_id) REFERENCES classes(id) ON DELETE CASCADE,
+    CONSTRAINT fk_class_riders_rider FOREIGN KEY (rider_id) REFERENCES riders(id)  ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_danish_ci;
+
+-- ---------- Rytterlicens (fra rytterens DRF-profil, nøgle/værdi pr. stævnetype) ----------
+CREATE TABLE IF NOT EXISTS rider_licenses (
+    id       INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    rider_id INT UNSIGNED NOT NULL,
+    type     VARCHAR(60) NOT NULL,  -- fx "B-Stævner", "C-Stævner", "D-Stævner", "FEI-Stævner"
+    vaerdi   VARCHAR(60) NULL,      -- dato som fritekst (fx "30-06-2027") eller "Ikke registreret"
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_rider_license (rider_id, type),
+    CONSTRAINT fk_rider_licenses_rider FOREIGN KEY (rider_id) REFERENCES riders(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_danish_ci;
+
+-- ---------- Rytterkategorier (fra rytterens DRF-profil, nøgle/værdi pr. kategori) ----------
+CREATE TABLE IF NOT EXISTS rider_categories (
+    id       INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    rider_id INT UNSIGNED NOT NULL,
+    kategori VARCHAR(60) NOT NULL,  -- fx "Spring - Hest", "Spring - Pony"
+    vaerdi   VARCHAR(20) NULL,      -- fx "1"
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_rider_category (rider_id, kategori),
+    CONSTRAINT fk_rider_categories_rider FOREIGN KEY (rider_id) REFERENCES riders(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_danish_ci;
 
 -- ---------- Officials (personer) ----------
@@ -249,15 +298,29 @@ CREATE TABLE IF NOT EXISTS fei_official_functions (
 
 -- ---------- Importlog ----------
 CREATE TABLE IF NOT EXISTS imports (
-    id           INT UNSIGNED NOT NULL AUTO_INCREMENT,
-    filename     VARCHAR(255) NULL,
-    imported_at  DATETIME     NOT NULL,
-    rows_total   INT          NOT NULL DEFAULT 0,
-    rows_skipped INT          NOT NULL DEFAULT 0,
-    assign_new   INT          NOT NULL DEFAULT 0,
-    assign_seen  INT          NOT NULL DEFAULT 0,
-    note         VARCHAR(255) NULL,
+    id              INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    filename        VARCHAR(255) NULL,
+    imported_at     DATETIME     NOT NULL,
+    rows_total      INT          NOT NULL DEFAULT 0,
+    rows_skipped    INT          NOT NULL DEFAULT 0,
+    assign_new      INT          NOT NULL DEFAULT 0,
+    assign_seen     INT          NOT NULL DEFAULT 0,
+    assign_excluded INT          NOT NULL DEFAULT 0,  -- rækker sprunget over pga. import_excluded_roles
+    note            VARCHAR(255) NULL,
     PRIMARY KEY (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_danish_ci;
+
+-- ---------- Roller der skal springes over ved import (admin-styret) ----------
+-- Matcher raa CSV-rollen (feltet "Rolle", før normalizeRolle) - en raekke med
+-- en rolle herpaa bliver slet ikke importeret (ingen show/klasse/official/
+-- tildeling oprettes for den raekke). Paavirker KUN fremtidige imports -
+-- roller der allerede er importeret fjernes ikke retroaktivt.
+CREATE TABLE IF NOT EXISTS import_excluded_roles (
+    id         INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    rolle      VARCHAR(60) NOT NULL,
+    created_at DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_import_excluded_roles_rolle (rolle)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_danish_ci;
 
 

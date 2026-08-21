@@ -46,7 +46,7 @@ render_header('Officials uden rolle', 'officials_uden_rolle');
     <tbody>
     <?php foreach ($rows as $r): ?>
         <tr>
-            <td><a href="<?= h(url('official.php?id=' . (int)$r['id'])) ?>"><?= h($r['navn']) ?></a></td>
+            <td><a href="<?= h(url('official.php?id=' . (int)$r['id']) . '&' . from_params('Uden rolle')) ?>"><?= h($r['navn']) ?></a></td>
             <td class="small"><?= h($r['typer'] ?? '') ?></td>
             <td><?= $r['sidste_opgave'] ? dk_date($r['sidste_opgave']) : '–' ?></td>
             <td class="r"><?= (int)$r['antal_opgaver'] ?></td>

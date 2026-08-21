@@ -37,13 +37,13 @@ $officials = $stats->clubOfficials($id, $selectedAar);
 $shows     = $stats->clubShows($id, $selectedAar);
 
 render_header($club['navn'], 'clubs');
+back_link(url('clubs.php'), 'Alle klubber');
 ?>
-<p><a href="<?= h(url('clubs.php')) ?>">← Alle klubber</a></p>
 <h1><?= h($club['navn']) ?><?= $club['forkort'] ? ' <span class="muted">(' . h($club['forkort']) . ')</span>' : '' ?> <?= club_status_badge($club['status']) ?></h1>
 
 <?php if ($selectedAar): ?>
     <p class="muted">Filtreret på år: <strong><?= h(implode(', ', $selectedAar)) ?></strong>
-        · <a href="<?= h(url('club.php?id=' . $id)) ?>">vis alle år</a></p>
+        · <a href="<?= h(url('club.php?id=' . $id) . (carry_from() !== '' ? '&' . carry_from() : '')) ?>">vis alle år</a></p>
 <?php endif; ?>
 
 <table class="kv">
@@ -87,7 +87,7 @@ render_header($club['navn'], 'clubs');
     <tbody>
     <?php foreach ($officials as $o): ?>
         <tr>
-            <td><a href="<?= h(url('official.php?id=' . (int)$o['id'])) ?>"><?= h($o['navn']) ?></a></td>
+            <td><a href="<?= h(url('official.php?id=' . (int)$o['id']) . '&' . from_params($club['navn'])) ?>"><?= h($o['navn']) ?></a></td>
             <td class="r"><?= (int)$o['antal_staevner'] ?></td>
             <td class="r"><?= (int)$o['antal_klasser'] ?></td>
             <td class="r"><?= (int)$o['antal_roller'] ?></td>
@@ -111,7 +111,7 @@ render_header($club['navn'], 'clubs');
         <tr>
             <td><?= dk_date($sh['dato']) ?></td>
             <td>
-                <a href="<?= h(url('show.php?id=' . (int)$sh['id'])) ?>"><?= h($sh['prop']) ?></a>
+                <a href="<?= h(url('show.php?id=' . (int)$sh['id']) . '&' . from_params($club['navn'])) ?>"><?= h($sh['prop']) ?></a>
                 <?php if ($sh['prop_unknown']): ?><span class="badge badge-warn" title="Prop manglede i kilden">?</span><?php endif; ?>
             </td>
             <td><?= h($sh['disciplin'] ?? '') ?></td>

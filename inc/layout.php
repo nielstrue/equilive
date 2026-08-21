@@ -47,6 +47,7 @@ function render_header(string $title, string $active = ''): void
         'roles'     => 'Roller',
         'clubs'     => 'Klubber',
         'shows'     => 'Stævner',
+        'riders'    => 'Ryttere',
         'drf'       => 'DRF-liste',
         'fei'       => 'FEI-liste',
     ];
@@ -55,6 +56,7 @@ function render_header(string $title, string $active = ''): void
         $nav['officials_merge'] = 'Flet officials';
         $nav['clubs_merge'] = 'Flet klubber';
         $nav['import'] = 'Import';
+        $nav['import_riders'] = 'Ryttere-import';
     }
     ?><!DOCTYPE html>
 <html lang="da">
@@ -171,4 +173,60 @@ function dk_date(?string $iso): string
     if (!$iso) return '–';
     $t = strtotime($iso);
     return $t ? date('d-m-Y', $t) : h($iso);
+}
+
+/**
+ * "Smart" tilbage-navigation: en detaljeside (show.php, official.php osv.)
+ * kan tilgås fra flere forskellige lister/andre detaljesider (fx både
+ * officials.php og en officials "Stævner"-tabel kan føre til show.php).
+ * Uden dette ville "← ..."-linket øverst altid pege samme sted hen, uanset
+ * hvor brugeren reelt kom fra.
+ *
+ * here_path()/from_params() bruges på AFSENDER-siden til at maerke et
+ * udgaaende link med hvor det blev klikket fra; back_link() bruges paa
+ * MODTAGER-siden til at vise "← Label" hen til det, hvis sat - ellers
+ * sidens normale standard-forælder (fx "Alle officials").
+ *
+ * url() gør from-værdien sikker at bruge direkte (kan aldrig blive en
+ * ekstern/absolut URL, uanset hvad $_GET['from'] indeholder) - se url()'s
+ * ltrim-håndtering af ledende skråstreger.
+ */
+
+/** Denne sides egen sti+query (uden base_path) - saa man kan lede tilbage hertil, filtre i URL'en inkluderet. */
+function here_path(): string
+{
+    $script = basename($_SERVER['SCRIPT_NAME'] ?? $_SERVER['PHP_SELF'] ?? '');
+    $qs = $_SERVER['QUERY_STRING'] ?? '';
+    return $script . ($qs !== '' ? '?' . $qs : '');
+}
+
+/** Query-parametre der maerker et udgaaende link med hvor brugeren kom fra - tilføj til enden af et href med '&'. */
+function from_params(string $label): string
+{
+    return 'from=' . rawurlencode(here_path()) . '&from_label=' . rawurlencode($label);
+}
+
+/**
+ * Videregiver et evt. indkommende from/from_label uændret - til links på
+ * SAMME side der ikke selv skal ændre "hvor kom du fra" (fx "vis alle år"),
+ * saa det ikke går tabt undervejs. Returnerer '' hvis intet from er sat.
+ * Tilføj til enden af et href med '&' (ligesom from_params()).
+ */
+function carry_from(): string
+{
+    $from = trim($_GET['from'] ?? '');
+    if ($from === '') {
+        return '';
+    }
+    return 'from=' . rawurlencode($from) . '&from_label=' . rawurlencode(trim($_GET['from_label'] ?? ''));
+}
+
+/** Renderer "← Label"-tilbage-linket øverst på en detaljeside. */
+function back_link(string $defaultUrl, string $defaultLabel): void
+{
+    $from  = trim($_GET['from'] ?? '');
+    $label = trim($_GET['from_label'] ?? '');
+    $href  = $from !== '' ? url($from) : $defaultUrl;
+    $text  = $from !== '' && $label !== '' ? $label : $defaultLabel;
+    echo '<p><a href="' . h($href) . '">← ' . h($text) . '</a></p>';
 }

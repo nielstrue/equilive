@@ -79,6 +79,12 @@ render_header('Import', 'import');
             <li>Sprunget over (ugyldige): <?= (int)$result['rows_skipped'] ?></li>
             <li>Nye tildelinger: <?= number_format($result['assign_new'], 0, ',', '.') ?></li>
             <li>Allerede kendt (opdateret): <?= number_format($result['assign_seen'], 0, ',', '.') ?></li>
+            <?php if ($result['assign_excluded'] > 0): ?>
+                <li>Sprunget over (ekskluderet rolle): <?= number_format($result['assign_excluded'], 0, ',', '.') ?></li>
+            <?php endif; ?>
+            <?php if ($result['score_summary_skipped'] > 0): ?>
+                <li>Sprunget over (score_summary, ikke en rigtig klasse): <?= number_format($result['score_summary_skipped'], 0, ',', '.') ?></li>
+            <?php endif; ?>
         </ul>
         <a class="btn" href="<?= h(url('officials.php')) ?>">Se officials-statistik →</a>
     </div>
@@ -186,11 +192,22 @@ render_header('Import', 'import');
     i håndkørte batches direkte fra browseren.</p>
 <p><a href="<?= h(url('migrate_flag_invalid_prop_shows.php')) ?>">Engangsmigrering: ret stævner med ugyldigt prop-id →</a></p>
 
+<h2>Ryttere (navn+RiderId pr. klasse, samt licens/kategori)</h2>
+<p><a class="btn" href="<?= h(url('import_riders.php')) ?>">Bulk-backfill af ryttere →</a></p>
+<p class="muted">Henter ryttere pr. klasse (kun stævner med status "Resultatbehandling færdig"), samt det
+    langsommere natlige batch-job for rytterlicens/-kategori (normalt kørt via
+    <code>cli/import_rider_details.php</code>).</p>
+
+<h2>Roller der springes over ved import</h2>
+<p><a class="btn" href="<?= h(url('import_role_exclusions.php')) ?>">Administrér ekskluderede roller →</a></p>
+<p class="muted">Vælg roller (fra CSV-filens rå "Rolle"-felt) der ikke skal importeres - hverken
+    show/klasse/official eller tildeling oprettes for en række med en ekskluderet rolle.</p>
+
 <h2>Importhistorik</h2>
 <?php $imports = (new Stats(db()))->imports(15); ?>
 <?php if ($imports): ?>
 <table class="data">
-    <thead><tr><th>Tid</th><th>Fil</th><th>Rækker</th><th>Skippet</th><th>Nye</th><th>Kendt</th></tr></thead>
+    <thead><tr><th>Tid</th><th>Fil</th><th>Rækker</th><th>Skippet</th><th>Nye</th><th>Kendt</th><th>Ekskluderet</th></tr></thead>
     <tbody>
     <?php foreach ($imports as $im): ?>
         <tr>
@@ -200,6 +217,7 @@ render_header('Import', 'import');
             <td class="r"><?= (int)$im['rows_skipped'] ?></td>
             <td class="r"><?= number_format((int)$im['assign_new'], 0, ',', '.') ?></td>
             <td class="r"><?= number_format((int)$im['assign_seen'], 0, ',', '.') ?></td>
+            <td class="r"><?= number_format((int)($im['assign_excluded'] ?? 0), 0, ',', '.') ?></td>
         </tr>
     <?php endforeach; ?>
     </tbody>

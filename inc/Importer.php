@@ -15,6 +15,17 @@ defined('APP') or die('Direkte adgang ikke tilladt');
  *
  * Nogle klassenavne indeholder selv semikolon(er). Da de første 6 og de
  * sidste 5 felter altid er faste, samles alt "i midten" til Klassenavn.
+ *
+ * Roller i import_excluded_roles (admin-styret, se import_role_exclusions.php)
+ * springes helt over - hele CSV-rækken ignoreres, saa der hverken oprettes
+ * show/klasse/official eller tildeling for den. Paavirker kun fremtidige
+ * imports, ikke allerede importerede tildelinger.
+ *
+ * Klasser med disciplin "score_summary" er IKKE rigtige klasser (en syntetisk
+ * opsummeringsraekke fra kilden) og springes derfor altid over - fast regel,
+ * ikke admin-styret som import_excluded_roles. Allerede importerede
+ * score_summary-klasser skal ryddes manuelt, se
+ * sql/find_and_delete_score_summary_classes.sql.
  */
 class Importer
 {
@@ -25,6 +36,10 @@ class Importer
     private array $showCache = [];
     private array $classCache = [];
     private array $officialCache = [];
+
+    // Roller (raa CSV-værdi) der springes helt over ved import - se
+    // import_role_exclusions.php. Indlæses én gang pr. import() i excludedRoles().
+    private array $excludedRoles = [];
 
     public function __construct(Database $db)
     {
@@ -47,14 +62,20 @@ class Importer
         }
 
         $summary = [
-            'rows_total'   => 0,
-            'rows_skipped' => 0,
-            'assign_new'   => 0,
-            'assign_seen'  => 0,
-            'shows'        => 0,
-            'classes'      => 0,
-            'officials'    => 0,
+            'rows_total'            => 0,
+            'rows_skipped'          => 0,
+            'assign_new'            => 0,
+            'assign_seen'           => 0,
+            'assign_excluded'       => 0,
+            'score_summary_skipped' => 0,
+            'shows'                 => 0,
+            'classes'               => 0,
+            'officials'             => 0,
         ];
+
+        $this->excludedRoles = array_flip(array_column(
+            $this->db->all('SELECT rolle FROM import_excluded_roles'), 'rolle'
+        ));
 
         $fh = fopen($filePath, 'r');
         if ($fh === false) {
@@ -82,6 +103,16 @@ class Importer
                 }
                 $summary['rows_total']++;
 
+                if ($row['disciplin'] === 'score_summary') {
+                    $summary['score_summary_skipped']++;
+                    continue;
+                }
+
+                if (isset($this->excludedRoles[$row['rolle']])) {
+                    $summary['assign_excluded']++;
+                    continue;
+                }
+
                 $clubId     = $this->getClub($row['forkort'], $row['klub']);
                 $showId     = $this->getShow($row, $clubId, $year);
                 $classId    = $this->getClass($showId, $row);
@@ -108,14 +139,15 @@ class Importer
 
             // Log importen.
             $this->db->run(
-                'INSERT INTO imports (filename, imported_at, rows_total, rows_skipped, assign_new, assign_seen, note)
-                 VALUES (?, NOW(), ?, ?, ?, ?, ?)',
+                'INSERT INTO imports (filename, imported_at, rows_total, rows_skipped, assign_new, assign_seen, assign_excluded, note)
+                 VALUES (?, NOW(), ?, ?, ?, ?, ?, ?)',
                 [
                     $filename,
                     $summary['rows_total'],
                     $summary['rows_skipped'],
                     $summary['assign_new'],
                     $summary['assign_seen'],
+                    $summary['assign_excluded'],
                     'OK',
                 ]
             );
@@ -188,10 +220,13 @@ class Importer
             );
             $id = $this->db->lastId();
         } else {
-            // Hold navn/forkort opdateret.
+            // navn overskrives IKKE her - en senere import kan have en rodet/forkert
+            // klub-tekst i kilden (fx en sammenblanding af stævne- og klubnavn), som
+            // ellers ville overskrive et allerede korrekt klubnavn. Ret navnet manuelt
+            // på klubbens side i stedet (se club.php).
             $this->db->run(
-                'UPDATE clubs SET navn = ?, forkort = COALESCE(NULLIF(?, ""), forkort) WHERE id = ?',
-                [$navn, $forkort, $id]
+                'UPDATE clubs SET forkort = COALESCE(NULLIF(?, ""), forkort) WHERE id = ?',
+                [$forkort, $id]
             );
         }
         return $this->clubCache[$key] = (int)$id;
@@ -380,10 +415,10 @@ class Importer
         return $rolle;
     }
 
-    /** "S2" i klassenavnet markerer en stilspringningsklasse. */
+    /** "S2", "S3", "S4" eller "S5" i klassenavnet markerer en stilspringningsklasse. */
     private function isStilspringning(string $klassenavn): bool
     {
-        return strpos($klassenavn, 'S2') !== false;
+        return (bool)preg_match('/S[2-5]/', $klassenavn);
     }
 
     /**
@@ -391,8 +426,13 @@ class Importer
      *  - top_rank/top_slug/top_code = højeste klasseniveau
      *  - has_lower = 1 hvis mindst én klasse er på et lavere niveau
      *  - disciplin = hyppigste disciplin blandt klasserne
+     *
+     * Kaldes altid til sidst i import(), men er offentlig saa den ogsaa kan
+     * køres separat efter en manuel oprydning i classes (fx
+     * sql/find_and_delete_score_summary_classes.sql), se
+     * cli/recompute_show_levels.php.
      */
-    private function recomputeShowLevels(): void
+    public function recomputeShowLevels(): void
     {
         // Niveauer (højeste + om der findes lavere).
         $rows = $this->db->all(

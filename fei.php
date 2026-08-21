@@ -128,7 +128,7 @@ render_header('FEI-liste', 'fei');
     <tbody>
     <?php foreach ($foreign as $r): ?>
         <tr>
-            <td><a href="<?= h(url('official.php?id=' . (int)$r['official_id'])) ?>"><?= h($r['navn']) ?></a></td>
+            <td><a href="<?= h(url('official.php?id=' . (int)$r['official_id']) . '&' . from_params('FEI-liste')) ?>"><?= h($r['navn']) ?></a></td>
             <td class="small"><?= h(trim($r['first_name'] . ' ' . $r['last_name'])) ?></td>
             <td><?= h($r['nf']) ?></td>
         </tr>
@@ -159,7 +159,7 @@ render_header('FEI-liste', 'fei');
     <tbody>
     <?php foreach ($list as $r): ?>
         <tr>
-            <td><?php if ($r['official_id']): ?><a href="<?= h(url('official.php?id=' . (int)$r['official_id'])) ?>"><?= h(trim($r['first_name'] . ' ' . $r['last_name'])) ?></a><?php else: ?><?= h(trim($r['first_name'] . ' ' . $r['last_name'])) ?><?php endif; ?></td>
+            <td><?php if ($r['official_id']): ?><a href="<?= h(url('official.php?id=' . (int)$r['official_id']) . '&' . from_params('FEI-liste')) ?>"><?= h(trim($r['first_name'] . ' ' . $r['last_name'])) ?></a><?php else: ?><?= h(trim($r['first_name'] . ' ' . $r['last_name'])) ?><?php endif; ?></td>
             <?php if ($allCountries): ?><td class="small"><?= h($r['nf']) ?></td><?php endif; ?>
             <td><?= h($r['discipline']) ?></td>
             <td class="small"><?= h($r['function_name']) ?></td>

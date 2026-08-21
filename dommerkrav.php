@@ -46,7 +46,7 @@ render_header('Dommerkrav', 'status_krav');
     <tbody>
     <?php foreach ($rows as $r): ?>
         <tr>
-            <td><a href="<?= h(url('official.php?id=' . (int)$r['official_id'])) ?>"><?= h($r['navn']) ?></a></td>
+            <td><a href="<?= h(url('official.php?id=' . (int)$r['official_id']) . '&' . from_params('Dommerkrav')) ?>"><?= h($r['navn']) ?></a></td>
             <td><span class="badge badge-lvl badge-<?= h($r['niveau']) ?>"><?= h($r['niveau']) ?></span></td>
             <td><?= official_status_badge($r['status']) ?></td>
             <td>
