@@ -1,20 +1,16 @@
 <?php
 /**
- * CLI-backfill (se inc/ShowDetailImporter.php): henter klassedetaljer
- * (hest/pony, sværhedsgrad) fra DRF for alle stævner i en årrække - samme
- * funktion som knappen "Hent klassedetaljer fra DRF" på show.php (eller den
- * admin-gaterede import_show_details.php-side), bare kørt i bulk for mange
- * stævner ad gangen.
- *
- * Springer stævner uden gyldigt Prop-id over (kan ikke slås op på DRF), og
- * springer som udgangspunkt allerede høstede stævner over - brug --force for
- * at genindlæse dem alle.
+ * CLI-backfill (se inc/RiderResultImporter.php): henter ryttere (navn+RiderId)
+ * pr. klasse fra DRF for stævner i en årrække, hvor stævnet allerede har
+ * status "Resultatbehandling færdig" (kræver at "Hent klassedetaljer fra
+ * DRF" er kørt for stævnet først - det er den der udfylder statussen og
+ * classes.drf_class_id).
  *
  * Brug:
- *   php cli/import_show_details.php --years=2023,2024,2025,2026
- *   php cli/import_show_details.php --years=2026 --limit=10        (lokal test)
- *   php cli/import_show_details.php --years=2023,2024,2025,2026 --force
- *   php cli/import_show_details.php --years=2026 --delay=2000      (ms mellem kald, default 1000)
+ *   php cli/import_class_riders.php --years=2023,2024,2025,2026
+ *   php cli/import_class_riders.php --years=2026 --limit=5           (lokal test)
+ *   php cli/import_class_riders.php --years=2023,2024,2025,2026 --force
+ *   php cli/import_class_riders.php --years=2026 --delay=500         (ms mellem klasse-opslag, default 300)
  */
 require __DIR__ . '/../inc/bootstrap.php';
 
@@ -31,20 +27,20 @@ $yearsArg = arg('years', '2023,2024,2025,2026');
 $years    = array_values(array_filter(array_map('intval', explode(',', $yearsArg))));
 $limit    = arg('limit') !== null ? (int)arg('limit') : null;
 $force    = in_array('--force', $argv, true);
-$delayMs  = (int)arg('delay', '1000');
+$delayMs  = (int)arg('delay', '300');
 
 if (!$years) {
     fwrite(STDERR, "Ugyldig --years (fx --years=2023,2024,2025,2026)\n");
     exit(1);
 }
 
-$importer = new ShowDetailImporter(db());
+$importer = new RiderResultImporter(db());
 $start    = microtime(true);
 $result   = $importer->harvestBatch($years, $limit, $force, $delayMs);
 
 if ($result['total'] === 0) {
     echo "Ingen stævner at behandle (år: " . implode(',', $years)
-        . ($force ? '' : ', alle er allerede markeret "Resultatbehandling færdig"') . ").\n";
+        . ($force ? '' : ', mangler resultat_status="Resultatbehandling færdig" eller allerede høstet') . ").\n";
     exit(0);
 }
 
@@ -56,8 +52,8 @@ foreach ($result['rows'] as $i => $row) {
     $n = $i + 1;
     if ($row['ok']) {
         printf(
-            "[%d/%d] #%d %-16s aar=%d  klasser=%d/%d\n",
-            $n, $result['total'], $row['show_id'], $row['prop'], $row['aar'], $row['classes_matched'], $row['classes_total']
+            "[%d/%d] #%d %-16s aar=%d  klasser=%d  ryttere=%d\n",
+            $n, $result['total'], $row['show_id'], $row['prop'], $row['aar'], $row['classes_harvested'], $row['riders_matched']
         );
     } else {
         fwrite(STDERR, sprintf(
@@ -70,7 +66,7 @@ foreach ($result['rows'] as $i => $row) {
 $sek = round(microtime(true) - $start, 1);
 echo str_repeat('-', 60) . "\n";
 printf(
-    "Færdig på %ss: %d ok, %d fejlet, %d klasser opdateret i alt.\n",
-    $sek, $result['ok'], $result['failed'], $result['classes_matched']
+    "Færdig på %ss: %d ok, %d fejlet, %d ryttere matchet i alt.\n",
+    $sek, $result['ok'], $result['failed'], $result['riders_matched']
 );
 exit($result['failed'] > 0 && $result['ok'] === 0 ? 1 : 0);

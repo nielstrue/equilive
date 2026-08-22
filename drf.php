@@ -109,7 +109,7 @@ render_header('DRF-liste', 'drf');
             <tbody>
             <?php foreach ($n as $r): ?>
                 <tr>
-                    <td><a href="<?= h(url('official.php?id=' . (int)$r['id'])) ?>"><?= h($r['navn']) ?></a></td>
+                    <td><a href="<?= h(url('official.php?id=' . (int)$r['id']) . '&' . from_params('DRF-liste')) ?>"><?= h($r['navn']) ?></a></td>
                     <td class="r"><?= (int)$r['staevner'] ?></td>
                     <td class="r"><?= (int)$r['roller'] ?></td>
                 </tr>
@@ -145,7 +145,7 @@ render_header('DRF-liste', 'drf');
     <tbody>
     <?php foreach ($list as $r): ?>
         <tr>
-            <td><?php if ($r['official_id']): ?><a href="<?= h(url('official.php?id=' . (int)$r['official_id'])) ?>"><?= h($r['navn']) ?></a><?php else: ?><?= h($r['navn']) ?><?php endif; ?></td>
+            <td><?php if ($r['official_id']): ?><a href="<?= h(url('official.php?id=' . (int)$r['official_id']) . '&' . from_params('DRF-liste')) ?>"><?= h($r['navn']) ?></a><?php else: ?><?= h($r['navn']) ?><?php endif; ?></td>
             <td><?= h($r['kategori']) ?></td>
             <td class="small"><?= h($r['type']) ?></td>
             <td><?= h($r['distrikt']) ?></td>

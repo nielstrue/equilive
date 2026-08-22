@@ -3,9 +3,10 @@ require __DIR__ . '/inc/bootstrap.php';
 require __DIR__ . '/inc/layout.php';
 require_login();
 
-$id    = (int)($_GET['id'] ?? 0);
-$stats = new Stats(db());
-$class = $stats->classInfo($id);
+$id      = (int)($_GET['id'] ?? 0);
+$isAdmin = (current_user()['role'] ?? '') === 'admin';
+$stats   = new Stats(db());
+$class   = $stats->classInfo($id);
 
 if (!$class) {
     render_header('Klasse', 'shows');
@@ -22,16 +23,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     try {
         if ($action === 'delete_assignment') {
+            require_admin();
             $assignId = (int)($_POST['assignment_id'] ?? 0);
             if (!$assignId) {
                 throw new InvalidArgumentException('Ukendt tildeling.');
             }
-            $row = db()->one('SELECT class_id FROM assignments WHERE id = ?', [$assignId]);
+            $row = db()->one('SELECT class_id, official_id, orig_rolle FROM assignments WHERE id = ?', [$assignId]);
             if (!$row || (int)$row['class_id'] !== $id) {
                 throw new InvalidArgumentException('Tildelingen hører ikke til denne klasse.');
             }
             db()->run('DELETE FROM assignments WHERE id = ?', [$assignId]);
-            $ok = 'Tildeling slettet.';
+            // Husk sletningen, saa en senere import af samme kildedata ikke genskaber
+            // netop denne (klasse, official, rolle) - se Importer::isTombstoned() og
+            // deleted_assignments.php.
+            db()->run(
+                'INSERT INTO deleted_assignments (class_id, official_id, orig_rolle, deleted_by)
+                 VALUES (?, ?, ?, ?)
+                 ON DUPLICATE KEY UPDATE deleted_by = VALUES(deleted_by), deleted_at = NOW()',
+                [(int)$row['class_id'], (int)$row['official_id'], $row['orig_rolle'], current_user()['id'] ?? null]
+            );
+            $ok = 'Tildeling slettet - importeres ikke igen ved en senere import af samme kildedata.';
         } elseif ($action === 'add_assignment') {
             $officialId = (int)($_POST['official_id'] ?? 0);
             $nyRolle    = trim($_POST['rolle'] ?? '');
@@ -94,10 +105,11 @@ $assignments     = $stats->classAssignments($id);
 $roles           = $stats->rolesForDiscipline($class['disciplin'] ?? '');
 $roleNames       = array_column($roles, 'navn');
 $activeOfficials = $stats->activeOfficials();
+$riders          = $stats->classRiders($id);
 
 render_header($class['klassenavn'], 'shows');
+back_link(url('show.php?id=' . (int)$class['show_id']), $class['prop']);
 ?>
-<p><a href="<?= h(url('show.php?id=' . (int)$class['show_id'])) ?>">← <?= h($class['prop']) ?></a></p>
 <h1><?= h($class['klassenavn']) ?> <?= level_badge($class['niveau_code']) ?></h1>
 
 <table class="kv">
@@ -122,7 +134,7 @@ render_header($class['klassenavn'], 'shows');
 <?php endif; ?>
 
 <table class="data">
-    <thead><tr><th>Official</th><th>Rolle</th><th>Nummer</th><th></th></tr></thead>
+    <thead><tr><th>Official</th><th>Rolle</th><th>Nummer</th><?php if ($isAdmin): ?><th></th><?php endif; ?></tr></thead>
     <tbody>
     <?php foreach ($assignments as $a): ?>
         <?php
@@ -136,7 +148,7 @@ render_header($class['klassenavn'], 'shows');
         }
         ?>
         <tr>
-            <td><a href="<?= h(url('official.php?id=' . (int)$a['official_id'])) ?>"><?= h($a['navn']) ?></a></td>
+            <td><a href="<?= h(url('official.php?id=' . (int)$a['official_id']) . '&' . from_params($class['klassenavn'])) ?>"><?= h($a['navn']) ?></a></td>
             <td>
                 <form method="post" style="display:flex;gap:.4rem">
                     <input type="hidden" name="action" value="update_rolle">
@@ -150,6 +162,7 @@ render_header($class['klassenavn'], 'shows');
                 </form>
             </td>
             <td><?= h($a['nummer'] ?? '–') ?></td>
+            <?php if ($isAdmin): ?>
             <td>
                 <form method="post" onsubmit="return confirm('Slet denne tildeling (<?= h($a['navn']) ?> - <?= h($current) ?>) helt? Kan ikke fortrydes.');">
                     <input type="hidden" name="action" value="delete_assignment">
@@ -157,10 +170,11 @@ render_header($class['klassenavn'], 'shows');
                     <button class="btn" type="submit" style="background:#c0392b">Slet</button>
                 </form>
             </td>
+            <?php endif; ?>
         </tr>
     <?php endforeach; ?>
     <?php if (!$assignments): ?>
-        <tr><td colspan="4" class="muted">Ingen officials registreret på denne klasse.</td></tr>
+        <tr><td colspan="<?= $isAdmin ? 4 : 3 ?>" class="muted">Ingen officials registreret på denne klasse.</td></tr>
     <?php endif; ?>
     </tbody>
 </table>
@@ -183,5 +197,23 @@ render_header($class['klassenavn'], 'shows');
     <input type="text" name="nummer" placeholder="Nummer (valgfri)" size="10">
     <button class="btn" type="submit">Tilføj</button>
 </form>
+
+<h2>Ryttere</h2>
+<?php if ($riders): ?>
+    <table class="data">
+        <thead><tr><th>Rytter</th><th>DRF-nummer</th></tr></thead>
+        <tbody>
+        <?php foreach ($riders as $r): ?>
+            <tr>
+                <td><a href="<?= h(url('rider.php?id=' . (int)$r['id']) . '&' . from_params($class['klassenavn'])) ?>"><?= h($r['navn']) ?></a></td>
+                <td><?= h($r['drf_rider_id']) ?></td>
+            </tr>
+        <?php endforeach; ?>
+        </tbody>
+    </table>
+<?php else: ?>
+    <p class="muted">Ingen ryttere hentet endnu - brug "Hent ryttere fra DRF" på stævnets side
+        (kræver status "Resultatbehandling færdig").</p>
+<?php endif; ?>
 <?php
 render_footer();

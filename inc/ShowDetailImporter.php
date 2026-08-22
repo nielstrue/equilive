@@ -34,6 +34,15 @@ class ShowDetailImporter
     /**
      * Stævner der er kandidater til DRF-detaljehøstning (til bulk-backfill,
      * se harvestBatch() og cli/import_show_details.php).
+     *
+     * Uden --force: fanger baade aldrig-høstede stævner (resultat_status er
+     * da altid NULL) og tidligere høstede stævner der endnu ikke er markeret
+     * "Resultatbehandling færdig" - de forsøges igen, indtil de bliver det.
+     * Et stævne der allerede er markeret færdig røres ikke igen.
+     *
+     * Nyeste stævner (højeste aar/id) først - de er mest sandsynlige til at
+     * skifte status fra "i gang" til "færdig" mellem to kørsler.
+     *
      * @return array<int,array{id:int,prop:string,aar:?int}>
      */
     private function pending(array $years, bool $force, ?int $limit): array
@@ -43,8 +52,8 @@ class ShowDetailImporter
                 WHERE aar IN ($placeholders)
                   AND prop_unknown = 0
                   AND status = 'aktiv'"
-             . ($force ? '' : ' AND detail_harvested_at IS NULL')
-             . ' ORDER BY aar, id';
+             . ($force ? '' : " AND (resultat_status IS NULL OR resultat_status <> 'Resultatbehandling færdig')")
+             . ' ORDER BY aar DESC, id DESC';
         $rows = $this->db->all($sql, $years);
         return $limit !== null ? array_slice($rows, 0, $limit) : $rows;
     }
@@ -116,6 +125,8 @@ class ShowDetailImporter
             throw new RuntimeException('Kunne ikke udtrække nogen klasser fra siden.');
         }
 
+        $resultatStatus = $this->parseResultatStatus($html);
+
         // DRF's side kan liste samme klassenummer to gange (fx en gruppeopdelt
         // klasse "14." og "14.-61" for samme klasse) - behold kun første forekomst.
         $records = array_values(array_intersect_key($records, array_unique(array_column($records, 'klassenr'))));
@@ -143,7 +154,10 @@ class ShowDetailImporter
                     $matched++;
                 }
             }
-            $this->db->run('UPDATE shows SET detail_harvested_at = NOW() WHERE id = ?', [$showId]);
+            $this->db->run(
+                'UPDATE shows SET detail_harvested_at = NOW(), resultat_status = ? WHERE id = ?',
+                [$resultatStatus, $showId]
+            );
             $this->db->commit();
         } catch (Throwable $e) {
             $this->db->rollBack();
@@ -227,6 +241,28 @@ class ShowDetailImporter
             ];
         }
         return $out;
+    }
+
+    /**
+     * Rå status-tekst for resultatbehandlingen, fx "Resultatbehandling færdig".
+     * Vises paa samme side som klasserne (<div class="event-top__status__info"><b>...</b></div>),
+     * saa dette koster intet ekstra HTTP-kald - se RiderResultImporter, som kun maa
+     * hoeste ryttere for stævner med netop denne status.
+     */
+    public function parseResultatStatus(string $html): ?string
+    {
+        $doc = new DOMDocument();
+        libxml_use_internal_errors(true);
+        $doc->loadHTML('<?xml encoding="utf-8" ?>' . $html);
+        libxml_clear_errors();
+        $xp = new DOMXPath($doc);
+
+        $n = $xp->query("//div[contains(concat(' ', normalize-space(@class), ' '), ' event-top__status__info ')]")->item(0);
+        if (!$n) {
+            return null;
+        }
+        $text = $this->clean($n->textContent);
+        return $text !== '' ? $text : null;
     }
 
     /** Afled hest/pony/begge af klassenavn+beskrivelse. */

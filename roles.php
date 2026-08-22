@@ -13,6 +13,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $roleId      = (int)($_POST['role_id'] ?? 0);
             $alle        = !empty($_POST['alle_discipliner']) ? 1 : 0;
             $disciplines = array_values(array_filter(array_map('strval', (array)($_POST['disciplines'] ?? [])), fn($v) => $v !== ''));
+            $drfTypes    = array_values(array_filter(array_map('trim', explode(',', $_POST['drf_types'] ?? ''))));
 
             if (!$roleId) {
                 throw new InvalidArgumentException('Ukendt rolle.');
@@ -26,6 +27,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     foreach ($disciplines as $d) {
                         db()->run('INSERT INTO role_disciplines (role_id, disciplin) VALUES (?, ?)', [$roleId, $d]);
                     }
+                }
+                db()->run('DELETE FROM role_drf_types WHERE role_id = ?', [$roleId]);
+                foreach ($drfTypes as $t) {
+                    db()->run('INSERT INTO role_drf_types (role_id, drf_type) VALUES (?, ?)', [$roleId, $t]);
                 }
                 db()->commit();
             } catch (Throwable $e) {
@@ -59,7 +64,12 @@ render_header('Roller', 'roles');
 <h1>Rollekatalog</h1>
 <p class="muted">Knyt hver rolle til én eller flere discipliner, eller markér at rollen gælder
     alle discipliner (fx en steward der bruges på tværs). Bruges til at filtrere på disciplin
-    i <a href="<?= h(url('officials.php')) ?>">Officials-statistik</a>.</p>
+    i <a href="<?= h(url('officials.php')) ?>">Officials-statistik</a> - og til et ikke-blokerende
+    tjek ved import (se <a href="<?= h(url('warnings.php')) ?>">Advarsler</a>): en tildeling hvor
+    rollen ikke passer til klassens disciplin, eller hvor officialen mangler den DRF-type rollen
+    kræver (kolonnen "Krævede DRF-typer" - kommasepareret, fx <code>Stildommer, Springdommer</code>,
+    matcher som delstreng mod <a href="<?= h(url('drf.php')) ?>">DRF-listens</a> type-felt), bliver
+    ikke afvist, men flaget til gennemsyn.</p>
 
 <?php if ($error): ?><div class="notice error"><strong>Fejl:</strong> <?= h($error) ?></div><?php endif; ?>
 <?php if ($ok): ?><div class="notice ok"><?= h($ok) ?></div><?php endif; ?>
@@ -73,14 +83,16 @@ render_header('Roller', 'roles');
             <?php foreach ($discipliner as $d): ?>
                 <th><?= h($d['disciplin']) ?></th>
             <?php endforeach; ?>
+            <th>Krævede DRF-typer</th>
             <th></th>
         </tr>
     </thead>
     <tbody>
     <?php foreach ($roles as $r): ?>
         <?php
-        $current = $r['discipliner'] ? explode(', ', $r['discipliner']) : [];
-        $formId  = 'role-form-' . (int)$r['id'];
+        $current  = $r['discipliner'] ? explode(', ', $r['discipliner']) : [];
+        $drfTypes = $r['drf_typer'] ?? '';
+        $formId   = 'role-form-' . (int)$r['id'];
         ?>
         <tr>
             <td><?= h($r['navn']) ?></td>
@@ -97,11 +109,15 @@ render_header('Roller', 'roles');
                         <?= $r['alle_discipliner'] ? 'disabled' : '' ?>>
                 </td>
             <?php endforeach; ?>
+            <td>
+                <input type="text" name="drf_types" form="<?= h($formId) ?>" value="<?= h($drfTypes) ?>"
+                    placeholder="fx Stildommer" size="20">
+            </td>
             <td><button class="btn" type="submit" form="<?= h($formId) ?>">Gem</button></td>
         </tr>
     <?php endforeach; ?>
     <?php if (!$roles): ?>
-        <tr><td colspan="<?= 4 + count($discipliner) ?>" class="muted">Ingen roller i kataloget endnu.</td></tr>
+        <tr><td colspan="<?= 5 + count($discipliner) ?>" class="muted">Ingen roller i kataloget endnu.</td></tr>
     <?php endif; ?>
     </tbody>
 </table>

@@ -51,4 +51,18 @@ return [
     // DRF stævneresultat - bruges til at hente klassedetaljer (hest/pony, sværhedsgrad)
     // for ét stævne ad gangen (EventId = shows.prop). Se knappen på et stævnes side.
     'drf_show_url' => 'https://rideforbund.dk/go/resultater-ranglister/staevneresultat',
+
+    // DRF klasseresultat - bruges til at hente ryttere (navn+RiderId) pr. klasse
+    // (EventId = shows.prop, SectionId = classes.drf_class_id). Se RiderResultImporter.
+    'drf_class_result_url' => 'https://rideforbund.dk/go/resultater-ranglister/staevneresultat/klasseresultat',
+
+    // DRF rytterprofil - bruges til at hente supplerende rytterdata (licens, kategorier)
+    // for én rytter ad gangen (RiderId = riders.drf_rider_id). Se RiderDetailImporter.
+    'drf_rider_url' => 'https://rideforbund.dk/go/heste-og-ryttere/find-ryttere/vis-rytter',
+
+    // Delt hemmelighed for URL-trigget cron (se cron_rider_details.php) - bruges når
+    // hosting ikke har shell/crontab-adgang, kun en "cron via URL"-funktion i panelet.
+    // Skift til en tilfældig streng (fx via `php -r "echo bin2hex(random_bytes(24));"`),
+    // og hold den hemmelig - alle med denne værdi kan udløse batch-jobbet.
+    'cron_secret' => 'RET_MIG_TIL_EN_TILFAELDIG_HEMMELIGHED',
 ];

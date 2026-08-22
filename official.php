@@ -38,8 +38,8 @@ $totRyttere = 0;
 foreach ($shows as $s) { $totRyttere += (int)$s['ryttere']; }
 
 render_header($off['navn'], 'officials');
+back_link(url('officials.php'), 'Alle officials');
 ?>
-<p><a href="<?= h(url('officials.php')) ?>">← Alle officials</a></p>
 <h1><?= h($off['navn']) ?> <?= official_status_badge($off['status']) ?></h1>
 <?php if ($aliases): ?>
     <p class="muted">Tidligere navn(e): <?= h(implode(', ', array_column($aliases, 'navn'))) ?></p>
@@ -61,7 +61,7 @@ render_header($off['navn'], 'officials');
 
 <?php if ($selectedAar): ?>
     <p class="muted">Filtreret på år: <strong><?= h(implode(', ', $selectedAar)) ?></strong>
-        · <a href="<?= h(url('official.php?id=' . $id)) ?>">vis alle år</a></p>
+        · <a href="<?= h(url('official.php?id=' . $id) . (carry_from() !== '' ? '&' . carry_from() : '')) ?>">vis alle år</a></p>
 <?php endif; ?>
 
 <div class="cards">
@@ -150,7 +150,7 @@ render_header($off['navn'], 'officials');
     <?php foreach ($shows as $s): ?>
         <tr>
             <td class="nowrap"><?= dk_date($s['dato']) ?></td>
-            <td><a href="<?= h(url('show.php?id=' . (int)$s['id'])) ?>"><?= h($s['prop']) ?></a></td>
+            <td><a href="<?= h(url('show.php?id=' . (int)$s['id']) . '&' . from_params($off['navn'])) ?>"><?= h($s['prop']) ?></a></td>
             <td><?= h($s['klub'] ?? '–') ?></td>
             <td><?= h($s['discipliner'] ?? $s['disciplin'] ?? '') ?></td>
             <td class="tight"><?= level_badge($s['top_code'], $s['has_lower']) ?></td>

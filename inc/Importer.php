@@ -15,6 +15,24 @@ defined('APP') or die('Direkte adgang ikke tilladt');
  *
  * Nogle klassenavne indeholder selv semikolon(er). Da de første 6 og de
  * sidste 5 felter altid er faste, samles alt "i midten" til Klassenavn.
+ *
+ * Roller i import_excluded_roles (admin-styret, se import_role_exclusions.php)
+ * springes helt over - hele CSV-rækken ignoreres, saa der hverken oprettes
+ * show/klasse/official eller tildeling for den. Paavirker kun fremtidige
+ * imports, ikke allerede importerede tildelinger.
+ *
+ * Klasser med disciplin "score_summary" er IKKE rigtige klasser (en syntetisk
+ * opsummeringsraekke fra kilden) og springes derfor altid over - fast regel,
+ * ikke admin-styret som import_excluded_roles. Allerede importerede
+ * score_summary-klasser skal ryddes manuelt, se
+ * sql/find_and_delete_score_summary_classes.sql.
+ *
+ * Hver tildeling tjekkes desuden for to ikke-blokerende advarsler (se
+ * checkAssignmentWarnings()): om rollen passer til klassens disciplin
+ * (rollekataloget, roles.php), og om officialen har den DRF-type rollen
+ * ev. kræver (role_drf_types, redigeres ogsaa paa roles.php). Fejlede tjek
+ * stopper IKKE importen - de gemmes i assignment_warnings til gennemsyn paa
+ * warnings.php.
  */
 class Importer
 {
@@ -25,6 +43,15 @@ class Importer
     private array $showCache = [];
     private array $classCache = [];
     private array $officialCache = [];
+
+    // Roller (raa CSV-værdi) der springes helt over ved import - se
+    // import_role_exclusions.php. Indlæses én gang pr. import() i excludedRoles().
+    private array $excludedRoles = [];
+
+    // Caches til checkAssignmentWarnings(), indlæst én gang pr. import().
+    private array $rolesCatalog = [];         // rolle-navn => ['alle' => bool, 'discs' => string[]]
+    private array $roleDrfTypes = [];         // rolle-navn => string[] (kraevede DRF-type-delstrenge)
+    private array $officialDrfTypesCache = []; // official_id => string[] (drf_officials.type), lazy pr. official
 
     public function __construct(Database $db)
     {
@@ -47,14 +74,43 @@ class Importer
         }
 
         $summary = [
-            'rows_total'   => 0,
-            'rows_skipped' => 0,
-            'assign_new'   => 0,
-            'assign_seen'  => 0,
-            'shows'        => 0,
-            'classes'      => 0,
-            'officials'    => 0,
+            'rows_total'             => 0,
+            'rows_skipped'           => 0,
+            'assign_new'             => 0,
+            'assign_seen'            => 0,
+            'assign_excluded'        => 0,
+            'score_summary_skipped'  => 0,
+            'warnings_flagged'       => 0,
+            'assign_deleted_skipped' => 0,
+            'shows'                  => 0,
+            'classes'                => 0,
+            'officials'              => 0,
         ];
+
+        $this->excludedRoles = array_flip(array_column(
+            $this->db->all('SELECT rolle FROM import_excluded_roles'), 'rolle'
+        ));
+
+        $this->rolesCatalog = [];
+        foreach ($this->db->all(
+            "SELECT r.navn, r.alle_discipliner, GROUP_CONCAT(DISTINCT rd.disciplin) AS discs
+             FROM roles r
+             LEFT JOIN role_disciplines rd ON rd.role_id = r.id
+             GROUP BY r.id, r.navn, r.alle_discipliner"
+        ) as $r) {
+            $this->rolesCatalog[$r['navn']] = [
+                'alle'  => (bool)$r['alle_discipliner'],
+                'discs' => $r['discs'] !== null ? explode(',', $r['discs']) : [],
+            ];
+        }
+
+        $this->roleDrfTypes = [];
+        foreach ($this->db->all(
+            'SELECT r.navn, rdt.drf_type FROM role_drf_types rdt JOIN roles r ON r.id = rdt.role_id'
+        ) as $r) {
+            $this->roleDrfTypes[$r['navn']][] = $r['drf_type'];
+        }
+        $this->officialDrfTypesCache = [];
 
         $fh = fopen($filePath, 'r');
         if ($fh === false) {
@@ -82,20 +138,40 @@ class Importer
                 }
                 $summary['rows_total']++;
 
+                if ($row['disciplin'] === 'score_summary') {
+                    $summary['score_summary_skipped']++;
+                    continue;
+                }
+
+                if (isset($this->excludedRoles[$row['rolle']])) {
+                    $summary['assign_excluded']++;
+                    continue;
+                }
+
                 $clubId     = $this->getClub($row['forkort'], $row['klub']);
                 $showId     = $this->getShow($row, $clubId, $year);
                 $classId    = $this->getClass($showId, $row);
                 $officialId = $this->getOfficial($row['official']);
 
-                $isNew = $this->upsertAssignment(
+                $origRolle = $row['rolle'] === '' ? '(ukendt)' : $row['rolle'];
+                if ($this->isTombstoned($classId, $officialId, $origRolle)) {
+                    $summary['assign_deleted_skipped']++;
+                    continue;
+                }
+
+                $result = $this->upsertAssignment(
                     $classId, $officialId, $row['rolle'], $row['nummer'],
                     $row['disciplin'], $this->isStilspringning($row['klassenavn'])
                 );
-                if ($isNew) {
+                if ($result['isNew']) {
                     $summary['assign_new']++;
                 } else {
                     $summary['assign_seen']++;
                 }
+
+                $summary['warnings_flagged'] += $this->checkAssignmentWarnings(
+                    $result['id'], $officialId, $result['rolle'], $row['disciplin']
+                );
             }
             fclose($fh);
 
@@ -108,14 +184,17 @@ class Importer
 
             // Log importen.
             $this->db->run(
-                'INSERT INTO imports (filename, imported_at, rows_total, rows_skipped, assign_new, assign_seen, note)
-                 VALUES (?, NOW(), ?, ?, ?, ?, ?)',
+                'INSERT INTO imports (filename, imported_at, rows_total, rows_skipped, assign_new, assign_seen, assign_excluded, warnings_flagged, assign_deleted_skipped, note)
+                 VALUES (?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?)',
                 [
                     $filename,
                     $summary['rows_total'],
                     $summary['rows_skipped'],
                     $summary['assign_new'],
                     $summary['assign_seen'],
+                    $summary['assign_excluded'],
+                    $summary['warnings_flagged'],
+                    $summary['assign_deleted_skipped'],
                     'OK',
                 ]
             );
@@ -188,10 +267,13 @@ class Importer
             );
             $id = $this->db->lastId();
         } else {
-            // Hold navn/forkort opdateret.
+            // navn overskrives IKKE her - en senere import kan have en rodet/forkert
+            // klub-tekst i kilden (fx en sammenblanding af stævne- og klubnavn), som
+            // ellers ville overskrive et allerede korrekt klubnavn. Ret navnet manuelt
+            // på klubbens side i stedet (se club.php).
             $this->db->run(
-                'UPDATE clubs SET navn = ?, forkort = COALESCE(NULLIF(?, ""), forkort) WHERE id = ?',
-                [$navn, $forkort, $id]
+                'UPDATE clubs SET forkort = COALESCE(NULLIF(?, ""), forkort) WHERE id = ?',
+                [$forkort, $id]
             );
         }
         return $this->clubCache[$key] = (int)$id;
@@ -314,6 +396,21 @@ class Importer
     }
 
     /**
+     * Er denne (klasse, official, raa CSV-rolle) bevidst slettet af en bruger
+     * (class.php's "Slet", se deleted_assignments.php)? Saa maa den ikke
+     * genskabes her. $origRolle skal vaere normaliseret ligesom
+     * upsertAssignment() gør det ('' => '(ukendt)'), saa nøglen matcher den
+     * der blev gemt paa sletningstidspunktet.
+     */
+    private function isTombstoned(int $classId, int $officialId, string $origRolle): bool
+    {
+        return $this->db->scalar(
+            'SELECT id FROM deleted_assignments WHERE class_id = ? AND official_id = ? AND orig_rolle = ?',
+            [$classId, $officialId, $origRolle]
+        ) !== false;
+    }
+
+    /**
      * Opretter/opdaterer en tildeling. Matcher på orig_rolle (den rolle CSV'en
      * oprindelig satte) i stedet for rolle (den viste rolle), saa en manuel
      * rolleret­telse i class.php genkendes ved næste import og ikke bliver
@@ -321,9 +418,10 @@ class Importer
      * sql/migrate_add_orig_rolle.sql. rolle røres derfor aldrig her efter
      * første oprettelse.
      *
-     * @return bool true hvis en ny tildeling blev oprettet.
+     * @return array{id:int,isNew:bool,rolle:string} id/isNew til tælling, rolle (den
+     *         viste/normaliserede rolle) til checkAssignmentWarnings().
      */
-    private function upsertAssignment(int $classId, int $officialId, string $rolle, string $nummer, string $disciplin, bool $isStilspringning): bool
+    private function upsertAssignment(int $classId, int $officialId, string $rolle, string $nummer, string $disciplin, bool $isStilspringning): array
     {
         $rolle = $rolle === '' ? '(ukendt)' : $rolle;
         $displayRolle = $this->normalizeRolle($disciplin, $rolle, $isStilspringning);
@@ -347,10 +445,87 @@ class Importer
                 'INSERT INTO assignments (class_id, official_id, rolle, orig_rolle, nummer) VALUES (?, ?, ?, ?, ?)',
                 [$classId, $officialId, $displayRolle, $rolle, $nummer !== '' ? $nummer : null]
             );
-            return true;
+            return ['id' => (int)$this->db->lastId(), 'isNew' => true, 'rolle' => $displayRolle];
         }
         $this->db->run('UPDATE assignments SET nummer = ? WHERE id = ?', [$nummer !== '' ? $nummer : null, $exists]);
-        return false;
+        return ['id' => (int)$exists, 'isNew' => false, 'rolle' => $displayRolle];
+    }
+
+    /**
+     * Ikke-blokerende tjek af én tildeling, kaldt for hver CSV-række (ikke kun
+     * nye) - saa en tidligere fejlfri tildeling ogsaa fanges, hvis fx
+     * rollekataloget eller DRF-typerne ændrer sig efterfølgende. Gemmer
+     * fundne problemer i assignment_warnings og RYDDER dem igen hvis
+     * problemet ikke længere er der (tabellen afspejler altid nutiden).
+     *
+     * @return int antal NYE advarsler (ikke tidligere set) for denne tildeling.
+     */
+    private function checkAssignmentWarnings(int $assignmentId, int $officialId, string $rolle, string $disciplin): int
+    {
+        $problems = [];
+
+        // A) Passer rollen til klassens disciplin? Kun for roller der allerede
+        // er klassificeret i rollekataloget (roles.php) - en uklassificeret
+        // rolle siger vi intet om (se roles.php's "Roller uden klassifikation").
+        if ($disciplin !== '' && isset($this->rolesCatalog[$rolle])) {
+            $cat = $this->rolesCatalog[$rolle];
+            if (!$cat['alle'] && $cat['discs'] && !in_array($disciplin, $cat['discs'], true)) {
+                $problems['rolle_disciplin'] = sprintf(
+                    'Rollen "%s" er ikke klassificeret til disciplinen "%s" i rollekataloget (se Roller).',
+                    $rolle, $disciplin
+                );
+            }
+        }
+
+        // B) Har officialen den DRF-type rollen ev. kræver (role_drf_types)?
+        // Matcher som delstreng (case-insensitive), ligesom DrfImporter::kategori().
+        if (!empty($this->roleDrfTypes[$rolle])) {
+            if (!array_key_exists($officialId, $this->officialDrfTypesCache)) {
+                $this->officialDrfTypesCache[$officialId] = array_column(
+                    $this->db->all('SELECT DISTINCT type FROM drf_officials WHERE official_id = ?', [$officialId]),
+                    'type'
+                );
+            }
+            $matched = false;
+            foreach ($this->roleDrfTypes[$rolle] as $required) {
+                foreach ($this->officialDrfTypesCache[$officialId] as $actual) {
+                    if (stripos($actual, $required) !== false) {
+                        $matched = true;
+                        break 2;
+                    }
+                }
+            }
+            if (!$matched) {
+                $problems['rolle_drf_type'] = sprintf(
+                    'Officialen er ikke registreret med DRF-typen "%s" som rollen "%s" kræver.',
+                    implode('/', $this->roleDrfTypes[$rolle]), $rolle
+                );
+            }
+        }
+
+        $newCount = 0;
+        foreach (['rolle_disciplin', 'rolle_drf_type'] as $type) {
+            if (isset($problems[$type])) {
+                $existing = $this->db->scalar(
+                    'SELECT id FROM assignment_warnings WHERE assignment_id = ? AND type = ?',
+                    [$assignmentId, $type]
+                );
+                $this->db->run(
+                    'INSERT INTO assignment_warnings (assignment_id, type, besked) VALUES (?, ?, ?)
+                     ON DUPLICATE KEY UPDATE besked = VALUES(besked), created_at = NOW()',
+                    [$assignmentId, $type, $problems[$type]]
+                );
+                if ($existing === false) {
+                    $newCount++;
+                }
+            } else {
+                $this->db->run(
+                    'DELETE FROM assignment_warnings WHERE assignment_id = ? AND type = ?',
+                    [$assignmentId, $type]
+                );
+            }
+        }
+        return $newCount;
     }
 
     /**
@@ -380,10 +555,10 @@ class Importer
         return $rolle;
     }
 
-    /** "S2" i klassenavnet markerer en stilspringningsklasse. */
+    /** "S2", "S3", "S4" eller "S5" i klassenavnet markerer en stilspringningsklasse. */
     private function isStilspringning(string $klassenavn): bool
     {
-        return strpos($klassenavn, 'S2') !== false;
+        return (bool)preg_match('/S[2-5]/', $klassenavn);
     }
 
     /**
@@ -391,8 +566,13 @@ class Importer
      *  - top_rank/top_slug/top_code = højeste klasseniveau
      *  - has_lower = 1 hvis mindst én klasse er på et lavere niveau
      *  - disciplin = hyppigste disciplin blandt klasserne
+     *
+     * Kaldes altid til sidst i import(), men er offentlig saa den ogsaa kan
+     * køres separat efter en manuel oprydning i classes (fx
+     * sql/find_and_delete_score_summary_classes.sql), se
+     * cli/recompute_show_levels.php.
      */
-    private function recomputeShowLevels(): void
+    public function recomputeShowLevels(): void
     {
         // Niveauer (højeste + om der findes lavere).
         $rows = $this->db->all(
