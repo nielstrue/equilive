@@ -197,6 +197,28 @@ CREATE TABLE IF NOT EXISTS assignments (
     CONSTRAINT fk_assign_official FOREIGN KEY (official_id) REFERENCES officials(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_danish_ci;
 
+-- ---------- Bevidst slettede tildelinger (maa ikke genskabes ved import) ----------
+-- Naar en tildeling slettes paa class.php ("Slet"), gemmes en "tombstone"
+-- her - saa Importer ikke genskaber netop den (klasse, official, raa
+-- CSV-rolle)-kombination ved en senere import af samme/opdateret kildedata.
+-- Matcher paa orig_rolle (den raa CSV-rolle), samme noegle som
+-- assignments.orig_rolle bruger til at genkende raekker ved reimport.
+-- deleted_by er bevidst UDEN foreign key mod users - users oprettes senere i
+-- dette skema, og ingen anden tabel referer users i forvejen.
+CREATE TABLE IF NOT EXISTS deleted_assignments (
+    id          INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    class_id    INT UNSIGNED NOT NULL,
+    official_id INT UNSIGNED NOT NULL,
+    orig_rolle  VARCHAR(60)  NOT NULL,
+    deleted_by  INT UNSIGNED NULL,
+    deleted_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_deleted_assignment (class_id, official_id, orig_rolle),
+    KEY idx_deleted_assignment_class (class_id),
+    CONSTRAINT fk_deleted_assignment_class    FOREIGN KEY (class_id)    REFERENCES classes(id)   ON DELETE CASCADE,
+    CONSTRAINT fk_deleted_assignment_official FOREIGN KEY (official_id) REFERENCES officials(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_danish_ci;
+
 -- ---------- Rollekatalog (rolle -> disciplin) ----------
 -- assignments.rolle forbliver fritekst; roles er et opslagskatalog der
 -- matches paa navn, saa den frie rolle-editor (class.php) er upaavirket.
@@ -215,6 +237,36 @@ CREATE TABLE IF NOT EXISTS role_disciplines (
     disciplin VARCHAR(40)  NOT NULL,
     PRIMARY KEY (role_id, disciplin),
     CONSTRAINT fk_role_disc_role FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_danish_ci;
+
+-- En rolle kan kræve at officialen har en bestemt DRF-type registreret (fx
+-- rollen "style_judge" kræver typen "Stildommer") - bruges til det ikke-
+-- blokerende import-tjek i Importer::checkAssignmentWarnings(). drf_type
+-- matches som en fritekst-delstreng (case-insensitive) mod drf_officials.type,
+-- ligesom DrfImporter::kategori() allerede gør. Tom/ingen rækker for en rolle
+-- = intet krav, tjekkes ikke.
+CREATE TABLE IF NOT EXISTS role_drf_types (
+    role_id  INT UNSIGNED NOT NULL,
+    drf_type VARCHAR(120) NOT NULL,
+    PRIMARY KEY (role_id, drf_type),
+    CONSTRAINT fk_role_drf_type_role FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_danish_ci;
+
+-- ---------- Advarsler pr. tildeling (ikke-blokerende, sat under import) ----------
+-- Fx "rolle passer ikke til klassens disciplin" eller "official mangler den
+-- DRF-type rollen kræver" - se Importer::checkAssignmentWarnings(). En række
+-- pr. (assignment_id, type): findes problemet ikke længere ved en senere
+-- import (rettet manuelt, eller ny DRF-data), slettes rækken igen - tabellen
+-- afspejler altid den AKTUELLE tilstand, ikke en historisk log.
+CREATE TABLE IF NOT EXISTS assignment_warnings (
+    id            INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    assignment_id INT UNSIGNED NOT NULL,
+    type          VARCHAR(40)  NOT NULL,   -- 'rolle_disciplin' | 'rolle_drf_type'
+    besked        VARCHAR(255) NOT NULL,
+    created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_assignment_warning (assignment_id, type),
+    CONSTRAINT fk_assignment_warning FOREIGN KEY (assignment_id) REFERENCES assignments(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_danish_ci;
 
 -- ---------- DRF officials-liste (høstet fra find-dommer) ----------
@@ -306,6 +358,8 @@ CREATE TABLE IF NOT EXISTS imports (
     assign_new      INT          NOT NULL DEFAULT 0,
     assign_seen     INT          NOT NULL DEFAULT 0,
     assign_excluded INT          NOT NULL DEFAULT 0,  -- rækker sprunget over pga. import_excluded_roles
+    warnings_flagged INT         NOT NULL DEFAULT 0,  -- NYE advarsler sat under denne import (se assignment_warnings)
+    assign_deleted_skipped INT   NOT NULL DEFAULT 0,  -- rækker sprunget over pga. deleted_assignments (bevidst slettet af en bruger)
     note            VARCHAR(255) NULL,
     PRIMARY KEY (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_danish_ci;

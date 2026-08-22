@@ -39,7 +39,10 @@ if (is_dir($path)) {
 }
 
 $importer = new Importer(db());
-$grand = ['rows_total' => 0, 'rows_skipped' => 0, 'assign_new' => 0, 'assign_seen' => 0, 'assign_excluded' => 0];
+$grand = [
+    'rows_total' => 0, 'rows_skipped' => 0, 'assign_new' => 0, 'assign_seen' => 0,
+    'assign_excluded' => 0, 'warnings_flagged' => 0, 'assign_deleted_skipped' => 0,
+];
 $start = microtime(true);
 
 foreach ($files as $file) {
@@ -51,8 +54,9 @@ foreach ($files as $file) {
         exit(1);
     }
     printf(
-        "%-28s rækker=%-6d nye=%-6d kendt=%-6d skippet=%-6d ekskluderet=%d\n",
-        $name, $r['rows_total'], $r['assign_new'], $r['assign_seen'], $r['rows_skipped'], $r['assign_excluded']
+        "%-28s rækker=%-6d nye=%-6d kendt=%-6d skippet=%-6d ekskluderet=%-6d advarsler=%-6d slettet_tidl=%d\n",
+        $name, $r['rows_total'], $r['assign_new'], $r['assign_seen'], $r['rows_skipped'],
+        $r['assign_excluded'], $r['warnings_flagged'], $r['assign_deleted_skipped']
     );
     foreach ($grand as $k => $_) { $grand[$k] += $r[$k]; }
 }
@@ -60,7 +64,14 @@ foreach ($files as $file) {
 $sek = round(microtime(true) - $start, 1);
 echo str_repeat('-', 60) . "\n";
 printf(
-    "I alt (%d fil(er), %ss): rækker=%d nye=%d kendt=%d skippet=%d ekskluderet=%d\n",
-    count($files), $sek, $grand['rows_total'], $grand['assign_new'], $grand['assign_seen'], $grand['rows_skipped'], $grand['assign_excluded']
+    "I alt (%d fil(er), %ss): rækker=%d nye=%d kendt=%d skippet=%d ekskluderet=%d advarsler=%d slettet_tidl=%d\n",
+    count($files), $sek, $grand['rows_total'], $grand['assign_new'], $grand['assign_seen'],
+    $grand['rows_skipped'], $grand['assign_excluded'], $grand['warnings_flagged'], $grand['assign_deleted_skipped']
 );
+if ($grand['warnings_flagged'] > 0) {
+    echo "Se advarslerne paa warnings.php (admin).\n";
+}
+if ($grand['assign_deleted_skipped'] > 0) {
+    echo "Se de sprungne-over slettede tildelinger paa deleted_assignments.php (admin).\n";
+}
 exit(0);

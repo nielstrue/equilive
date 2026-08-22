@@ -57,6 +57,8 @@ function render_header(string $title, string $active = ''): void
         $nav['clubs_merge'] = 'Flet klubber';
         $nav['import'] = 'Import';
         $nav['import_riders'] = 'Ryttere-import';
+        $nav['warnings'] = 'Advarsler';
+        $nav['deleted_assignments'] = 'Slettede tildelinger';
     }
     ?><!DOCTYPE html>
 <html lang="da">

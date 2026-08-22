@@ -28,18 +28,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delet
     if (!$officialId || $rolle === '') {
         $error = 'Ukendt official eller rolle.';
     } else {
-        $navn = db()->scalar('SELECT navn FROM officials WHERE id = ?', [$officialId]);
-        $antal = (int)db()->scalar(
-            'SELECT COUNT(*) FROM assignments a JOIN classes c ON c.id = a.class_id
-             WHERE c.show_id = ? AND a.official_id = ? AND a.rolle = ?',
-            [$id, $officialId, $rolle]
-        );
-        db()->run(
-            'DELETE a FROM assignments a JOIN classes c ON c.id = a.class_id
-             WHERE c.show_id = ? AND a.official_id = ? AND a.rolle = ?',
-            [$id, $officialId, $rolle]
-        );
-        $deleteResult = ['navn' => $navn !== false ? $navn : ('#' . $officialId), 'rolle' => $rolle, 'antal' => $antal];
+        try {
+            $navn = db()->scalar('SELECT navn FROM officials WHERE id = ?', [$officialId]);
+            // Hent (klasse, raa rolle) for hver ramt tildeling FØR sletning - skal
+            // bruges til at oprette en tombstone pr. klasse bagefter (se
+            // Importer::isTombstoned() og deleted_assignments.php), saa ingen af
+            // dem genskabes ved en senere import af samme kildedata.
+            $rows = db()->all(
+                'SELECT c.id AS class_id, a.orig_rolle
+                 FROM assignments a JOIN classes c ON c.id = a.class_id
+                 WHERE c.show_id = ? AND a.official_id = ? AND a.rolle = ?',
+                [$id, $officialId, $rolle]
+            );
+            db()->run(
+                'DELETE a FROM assignments a JOIN classes c ON c.id = a.class_id
+                 WHERE c.show_id = ? AND a.official_id = ? AND a.rolle = ?',
+                [$id, $officialId, $rolle]
+            );
+            foreach ($rows as $r) {
+                db()->run(
+                    'INSERT INTO deleted_assignments (class_id, official_id, orig_rolle, deleted_by)
+                     VALUES (?, ?, ?, ?)
+                     ON DUPLICATE KEY UPDATE deleted_by = VALUES(deleted_by), deleted_at = NOW()',
+                    [(int)$r['class_id'], $officialId, $r['orig_rolle'], current_user()['id'] ?? null]
+                );
+            }
+            $deleteResult = ['navn' => $navn !== false ? $navn : ('#' . $officialId), 'rolle' => $rolle, 'antal' => count($rows)];
+        } catch (Throwable $e) {
+            $error = $e->getMessage();
+        }
     }
 } elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'harvest_details') {
     try {

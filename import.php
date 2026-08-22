@@ -85,6 +85,14 @@ render_header('Import', 'import');
             <?php if ($result['score_summary_skipped'] > 0): ?>
                 <li>Sprunget over (score_summary, ikke en rigtig klasse): <?= number_format($result['score_summary_skipped'], 0, ',', '.') ?></li>
             <?php endif; ?>
+            <?php if ($result['warnings_flagged'] > 0): ?>
+                <li>Nye advarsler (rolle/disciplin, rolle/DRF-type): <?= number_format($result['warnings_flagged'], 0, ',', '.') ?> -
+                    <a href="<?= h(url('warnings.php')) ?>">se dem</a></li>
+            <?php endif; ?>
+            <?php if ($result['assign_deleted_skipped'] > 0): ?>
+                <li>Sprunget over (bevidst slettet tidligere): <?= number_format($result['assign_deleted_skipped'], 0, ',', '.') ?> -
+                    <a href="<?= h(url('deleted_assignments.php')) ?>">se dem</a></li>
+            <?php endif; ?>
         </ul>
         <a class="btn" href="<?= h(url('officials.php')) ?>">Se officials-statistik →</a>
     </div>
@@ -207,7 +215,7 @@ render_header('Import', 'import');
 <?php $imports = (new Stats(db()))->imports(15); ?>
 <?php if ($imports): ?>
 <table class="data">
-    <thead><tr><th>Tid</th><th>Fil</th><th>Rækker</th><th>Skippet</th><th>Nye</th><th>Kendt</th><th>Ekskluderet</th></tr></thead>
+    <thead><tr><th>Tid</th><th>Fil</th><th>Rækker</th><th>Skippet</th><th>Nye</th><th>Kendt</th><th>Ekskluderet</th><th>Advarsler</th><th>Slettet tidl.</th></tr></thead>
     <tbody>
     <?php foreach ($imports as $im): ?>
         <tr>
@@ -218,6 +226,8 @@ render_header('Import', 'import');
             <td class="r"><?= number_format((int)$im['assign_new'], 0, ',', '.') ?></td>
             <td class="r"><?= number_format((int)$im['assign_seen'], 0, ',', '.') ?></td>
             <td class="r"><?= number_format((int)($im['assign_excluded'] ?? 0), 0, ',', '.') ?></td>
+            <td class="r"><?= number_format((int)($im['warnings_flagged'] ?? 0), 0, ',', '.') ?></td>
+            <td class="r"><?= number_format((int)($im['assign_deleted_skipped'] ?? 0), 0, ',', '.') ?></td>
         </tr>
     <?php endforeach; ?>
     </tbody>

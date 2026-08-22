@@ -374,15 +374,17 @@ class Stats
         return $real;
     }
 
-    /** Rollekataloget: hver rolle med tilknyttede discipliner og brugsantal (til Roller-siden). */
+    /** Rollekataloget: hver rolle med tilknyttede discipliner, kraevede DRF-typer og brugsantal (til Roller-siden). */
     public function rolesCatalog(): array
     {
         return $this->db->all(
             "SELECT r.id, r.navn, r.alle_discipliner,
                     GROUP_CONCAT(DISTINCT rd.disciplin ORDER BY rd.disciplin SEPARATOR ', ') AS discipliner,
+                    GROUP_CONCAT(DISTINCT rdt.drf_type ORDER BY rdt.drf_type SEPARATOR ', ') AS drf_typer,
                     (SELECT COUNT(*) FROM assignments a WHERE a.rolle = r.navn) AS antal_tildelinger
              FROM roles r
-             LEFT JOIN role_disciplines rd ON rd.role_id = r.id
+             LEFT JOIN role_disciplines rd  ON rd.role_id = r.id
+             LEFT JOIN role_drf_types   rdt ON rdt.role_id = r.id
              GROUP BY r.id, r.navn, r.alle_discipliner
              ORDER BY r.navn"
         );
@@ -423,6 +425,56 @@ class Stats
              WHERE e.id IS NULL
              GROUP BY a.orig_rolle
              ORDER BY a.orig_rolle"
+        );
+    }
+
+    // ---------------- Import: advarsler pr. tildeling ----------------
+
+    /**
+     * Aktuelle advarsler sat af Importer::checkAssignmentWarnings() (rolle vs.
+     * disciplin, rolle vs. official DRF-type), med kontekst til gennemsyn.
+     * Udelukkede stævner (status='udelukket') medtages ikke, ligesom andre
+     * statistikker i appen.
+     */
+    public function assignmentWarnings(): array
+    {
+        return $this->db->all(
+            "SELECT w.id, w.type, w.besked, w.created_at,
+                    a.id AS assignment_id, a.rolle,
+                    o.id AS official_id, o.navn AS official,
+                    c.id AS class_id, c.klassenavn, c.disciplin,
+                    s.id AS show_id, s.prop, s.dato
+             FROM assignment_warnings w
+             JOIN assignments a ON a.id = w.assignment_id
+             JOIN officials o   ON o.id = a.official_id
+             JOIN classes c     ON c.id = a.class_id
+             JOIN shows s       ON s.id = c.show_id
+             WHERE s.status = 'aktiv'
+             ORDER BY w.created_at DESC"
+        );
+    }
+
+    // ---------------- Bevidst slettede tildelinger (tombstones) ----------------
+
+    /**
+     * Tildelinger der er slettet manuelt (class.php's "Slet") og derfor IKKE
+     * genskabes ved import (se Importer::isTombstoned()) - til gennemsyn og
+     * evt. fortrydelse på deleted_assignments.php.
+     */
+    public function deletedAssignments(): array
+    {
+        return $this->db->all(
+            "SELECT d.id, d.orig_rolle, d.deleted_at,
+                    u.name AS deleted_by_navn,
+                    o.id AS official_id, o.navn AS official,
+                    c.id AS class_id, c.klassenavn,
+                    s.id AS show_id, s.prop, s.dato
+             FROM deleted_assignments d
+             JOIN officials o   ON o.id = d.official_id
+             JOIN classes c     ON c.id = d.class_id
+             JOIN shows s       ON s.id = c.show_id
+             LEFT JOIN users u  ON u.id = d.deleted_by
+             ORDER BY d.deleted_at DESC"
         );
     }
 
