@@ -60,7 +60,7 @@ render_header('Migrering: banebygger-rolle', '');
         </ul>
     </div>
     <?php if ($preview['found'] > 0): ?>
-        <form method="post" onsubmit="return confirm('Kør migreringen for <?= (int)$preview['found'] ?> rækker? Kan ikke fortrydes.');">
+        <form method="post" onsubmit="return confirm('Kør migreringen for <?= (int)$preview['found'] ?> rækker? Kan ikke fortrydes.');"><?= csrf_field() ?>
             <input type="hidden" name="action" value="run">
             <button class="btn" type="submit">Kør migrering nu</button>
         </form>

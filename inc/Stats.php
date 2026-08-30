@@ -88,7 +88,11 @@ class Stats
         // i stedet for én stor fan-out-JOIN med en korreleret subquery pr. official.
         // Flere år vælges som OR via IN(...). shows joines altid ind (uanset aarsfilter)
         // for at udelukke stævner med status = 'udelukket' fra alle nøgletal.
-        $yearJoin = "JOIN shows s ON s.id = c.show_id AND s.status = 'aktiv'";
+        // score_summary er ikke en rigtig klasse (syntetisk optællingsraekke fra
+        // kilden, se Importer.php) og skal derfor heller aldrig taelle med i
+        // antal_klasser/antal_ryttere/niveauer for en official.
+        $yearJoin = "JOIN shows s ON s.id = c.show_id AND s.status = 'aktiv'"
+                  . " AND (c.disciplin IS NULL OR c.disciplin <> 'score_summary')";
         $yearParams = [];
         if ($years) {
             $placeholders = implode(',', array_fill(0, count($years), '?'));
@@ -972,7 +976,7 @@ class Stats
                     (SELECT GROUP_CONCAT(DISTINCT c3.disciplin ORDER BY c3.disciplin SEPARATOR ' / ')
                         FROM classes c3 WHERE c3.show_id = s.id AND c3.disciplin IS NOT NULL AND c3.disciplin <> '') AS discipliner
              FROM assignments a
-             JOIN classes c ON c.id = a.class_id
+             JOIN classes c ON c.id = a.class_id AND (c.disciplin IS NULL OR c.disciplin <> 'score_summary')
              JOIN shows   s ON s.id = c.show_id $yearCond
              LEFT JOIN clubs cl ON cl.id = s.club_id
              LEFT JOIN (
@@ -980,7 +984,7 @@ class Stats
                  FROM (
                      SELECT DISTINCT a2.class_id, c2.show_id, c2.starter
                      FROM assignments a2
-                     JOIN classes c2 ON c2.id = a2.class_id
+                     JOIN classes c2 ON c2.id = a2.class_id AND (c2.disciplin IS NULL OR c2.disciplin <> 'score_summary')
                      WHERE a2.official_id = ?
                  ) dc
                  GROUP BY dc.show_id
@@ -1011,7 +1015,7 @@ class Stats
         return $this->db->all(
             "SELECT l.code, l.label, l.`rank`, COUNT(DISTINCT a.class_id) AS klasser
              FROM assignments a
-             JOIN classes c ON c.id = a.class_id
+             JOIN classes c ON c.id = a.class_id AND (c.disciplin IS NULL OR c.disciplin <> 'score_summary')
              JOIN levels  l ON l.slug = c.niveau_slug
              $yearJoin
              WHERE a.official_id = ?
@@ -1093,7 +1097,7 @@ class Stats
             "SELECT o.id AS official_id, o.navn, a.rolle,
                     COUNT(DISTINCT a.class_id) AS klasser
              FROM assignments a
-             JOIN classes c ON c.id = a.class_id
+             JOIN classes c ON c.id = a.class_id AND (c.disciplin IS NULL OR c.disciplin <> 'score_summary')
              JOIN officials o ON o.id = a.official_id
              WHERE c.show_id = ?
              GROUP BY o.id, o.navn, a.rolle
@@ -1226,7 +1230,7 @@ class Stats
                     COUNT(*)                   AS antal_roller,
                     GROUP_CONCAT(DISTINCT a.rolle ORDER BY a.rolle SEPARATOR ', ') AS roller
              FROM assignments a
-             JOIN classes c    ON c.id = a.class_id
+             JOIN classes c    ON c.id = a.class_id AND (c.disciplin IS NULL OR c.disciplin <> 'score_summary')
              JOIN shows s      ON s.id = c.show_id
              JOIN officials o  ON o.id = a.official_id
              WHERE s.club_id = ? $yearWhere
@@ -1346,7 +1350,8 @@ class Stats
         return $this->db->all(
             "SELECT DISTINCT c.disciplin FROM classes c
              JOIN shows s ON s.id = c.show_id AND s.status = 'aktiv'
-             WHERE c.disciplin IS NOT NULL AND c.disciplin <> '' ORDER BY c.disciplin"
+             WHERE c.disciplin IS NOT NULL AND c.disciplin <> '' AND c.disciplin <> 'score_summary'
+             ORDER BY c.disciplin"
         );
     }
 
@@ -1593,6 +1598,37 @@ class Stats
              GROUP BY o.fei_id, o.first_name, o.last_name
              ORDER BY o.last_name, o.first_name"
         );
+    }
+
+    /**
+     * Foreslår de mest sandsynlige officials for en umatchet FEI-person, ud fra
+     * navnelighed - til klikbare forslag på FEI-listen i stedet for kun
+     * fritekstsøgning. Fanger fx forskelle i store/små bogstaver, stavevarianter
+     * og mellemnavne som den eksakte matchning (FeiOfficialMatcher) ikke gør.
+     *
+     * $officials er hele officials-listen (fx fra officialsOverview()) - hentes
+     * kun én gang af kalderen og genbruges til alle umatchede personer, saa
+     * denne metode ikke selv slår op i databasen.
+     *
+     * @param array<array{id:int,navn:string}> $officials
+     * @return array<array{id:int,navn:string,score:float}>
+     */
+    public function feiSuggestMatches(string $firstName, string $lastName, array $officials, int $limit = 3): array
+    {
+        $target = mb_strtolower(trim(preg_replace('/\s+/u', ' ', $firstName . ' ' . $lastName) ?? ''), 'UTF-8');
+        if ($target === '') {
+            return [];
+        }
+        $scored = [];
+        foreach ($officials as $o) {
+            $navn = mb_strtolower(trim(preg_replace('/\s+/u', ' ', $o['navn']) ?? ''), 'UTF-8');
+            similar_text($target, $navn, $pct);
+            if ($pct >= 55.0) { // filtrerer tilfældig støj fra - kun rimeligt sandsynlige forslag
+                $scored[] = ['id' => (int)$o['id'], 'navn' => $o['navn'], 'score' => round($pct, 1)];
+            }
+        }
+        usort($scored, fn($a, $b) => $b['score'] <=> $a['score']);
+        return array_slice($scored, 0, $limit);
     }
 
     /**

@@ -16,10 +16,15 @@ if (current_user() !== null) {
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $email    = trim($_POST['email'] ?? '');
-    $password = (string)($_POST['password'] ?? '');
+    // trim() beskytter mod et kopieret kodeord der har fået et ekstra mellemrum
+    // med (fx ved manuel markering fra en "Kopiér"-visning) - et rigtigt
+    // kodeord her har aldrig indledende/afsluttende mellemrum i forvejen.
+    $password = trim((string)($_POST['password'] ?? ''));
 
     $user = db()->one('SELECT * FROM users WHERE email = ?', [$email]);
     if ($user && $user['is_active'] && $user['password_hash'] && password_verify($password, $user['password_hash'])) {
+        ensure_equilive_user_state((int)$user['id']);
+        db()->run('UPDATE equilive_user_state SET last_login_at = NOW(), login_count = login_count + 1 WHERE user_id = ?', [$user['id']]);
         session_regenerate_id(true);
         $_SESSION['user'] = [
             'id'    => (int)$user['id'],
@@ -48,7 +53,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         <?php if ($error): ?><div class="notice error"><?= h($error) ?></div><?php endif; ?>
 
-        <form method="post" class="login-form">
+        <form method="post" class="login-form"><?= csrf_field() ?>
             <input type="hidden" name="next" value="<?= h($next) ?>">
             <label>Email
                 <input type="email" name="email" required autofocus value="<?= h($_POST['email'] ?? '') ?>">

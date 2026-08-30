@@ -111,7 +111,7 @@ render_header('Ryttere (backfill)', 'import');
     <?php endif; ?>
 <?php endif; ?>
 
-<form method="post" style="margin:.8rem 0;display:flex;gap:1rem;align-items:flex-start;flex-wrap:wrap">
+<form method="post" style="margin:.8rem 0;display:flex;gap:1rem;align-items:flex-start;flex-wrap:wrap"><?= csrf_field() ?>
     <input type="hidden" name="action" value="harvest_class_riders">
     <fieldset style="border:0;padding:0;margin:0">
         <legend class="muted" style="font-size:.85rem">År</legend>
@@ -172,7 +172,7 @@ render_header('Ryttere (backfill)', 'import');
     <?php endif; ?>
 <?php endif; ?>
 
-<form method="post" style="margin:.8rem 0;display:flex;gap:1rem;align-items:flex-start;flex-wrap:wrap">
+<form method="post" style="margin:.8rem 0;display:flex;gap:1rem;align-items:flex-start;flex-wrap:wrap"><?= csrf_field() ?>
     <input type="hidden" name="action" value="harvest_rider_details">
     <label class="muted" style="font-size:.85rem">Antal ryttere pr. batch:
         <input type="number" name="rider_limit" value="<?= (int)$riderLimit ?>" min="1" max="50" style="width:5rem">

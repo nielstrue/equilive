@@ -36,7 +36,10 @@ class RiderResultImporter
 
     /**
      * Stævner der er kandidater til rytter-høstning (til bulk-backfill, se
-     * harvestBatch() og cli/import_class_riders.php).
+     * harvestBatch() og cli/import_class_riders.php). E-stævner
+     * ("Rideskolestævne (E)", shows.top_code = 'E') og endurance-stævner
+     * (shows.disciplin = 'endurance') udelades - der er ikke behov for at
+     * høste ryttere fra rideskolestævner eller distanceridt.
      * @return array<int,array{id:int,prop:string,aar:?int}>
      */
     private function pending(array $years, bool $force, ?int $limit): array
@@ -45,7 +48,9 @@ class RiderResultImporter
         $sql = "SELECT id, prop, aar FROM shows
                 WHERE aar IN ($placeholders)
                   AND status = 'aktiv'
-                  AND resultat_status = 'Resultatbehandling færdig'"
+                  AND resultat_status = 'Resultatbehandling færdig'
+                  AND (top_code IS NULL OR top_code != 'E')
+                  AND (disciplin IS NULL OR disciplin != 'endurance')"
              . ($force ? '' : ' AND riders_harvested_at IS NULL')
              . ' ORDER BY aar, id';
         $rows = $this->db->all($sql, $years);

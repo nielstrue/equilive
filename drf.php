@@ -85,7 +85,7 @@ render_header('DRF-liste', 'drf');
                     <?php if ($isAdmin): ?>
                         <td>
                             <form method="post" style="display:flex;gap:.3rem"
-                                  onsubmit="return this.official_navn.value ? confirm('Omdøb den valgte official til dette DRF-navn (det gamle navn bevares som alias)?') : true;">
+                                  onsubmit="return this.official_navn.value ? confirm('Omdøb den valgte official til dette DRF-navn (det gamle navn bevares som alias)?') : true;"><?= csrf_field() ?>
                                 <input type="hidden" name="action" value="link_drf">
                                 <input type="hidden" name="drf_navn" value="<?= h($r['navn']) ?>">
                                 <input type="text" name="official_navn" list="official-datalist" size="26"

@@ -1,10 +1,10 @@
 <?php
 require __DIR__ . '/inc/bootstrap.php';
 require __DIR__ . '/inc/layout.php';
-require_login();
+require_admin();
 
 $stats   = new Stats(db());
-$isAdmin = (current_user()['role'] ?? '') === 'admin';
+$isAdmin = true; // siden kræver nu admin i sig selv - $isAdmin holdt for at undgå at røre resten af templaten
 
 $linkError  = null;
 $linkOk     = null;
@@ -74,7 +74,7 @@ render_header('FEI-liste', 'fei');
 <p class="muted">Sidst opdateret: <?= h($sum['updated_at'] ?? '–') ?></p>
 
 <?php if ($isAdmin): ?>
-    <form method="post" style="margin:.6rem 0">
+    <form method="post" style="margin:.6rem 0"><?= csrf_field() ?>
         <input type="hidden" name="action" value="match_fei">
         <button class="btn" type="submit">Genkør matching nu</button>
     </form>
@@ -84,12 +84,15 @@ render_header('FEI-liste', 'fei');
 <h2>FEI-personer uden match i dine data</h2>
 <p class="muted">Danske personer på FEI-listen der ikke kunne kobles til en official – ofte stavning/navneforskelle,
     eller personer der endnu ikke har virket ved et stævne i dine data.
-    <?php if ($isAdmin): ?>Lad feltet stå tomt for at oprette som ny official, eller vælg en eksisterende
-        for at knytte FEI-personen til den.<?php endif; ?></p>
-<?php $u = $stats->feiUnmatched(); ?>
+    <?php if ($isAdmin): ?>Klik et forslag for at knytte direkte, eller søg selv i feltet nedenunder.
+        Lad feltet stå tomt for at oprette som ny official.<?php endif; ?></p>
+<?php
+$u = $stats->feiUnmatched();
+$alleOfficials = $isAdmin ? $stats->officialsOverview('', 'navn') : [];
+?>
 <?php if ($isAdmin): ?>
     <datalist id="official-datalist">
-        <?php foreach ($stats->officialsOverview('', 'navn') as $o): ?>
+        <?php foreach ($alleOfficials as $o): ?>
             <option value="<?= h($o['navn']) ?>">
         <?php endforeach; ?>
     </datalist>
@@ -102,9 +105,26 @@ render_header('FEI-liste', 'fei');
             <td><?= h(trim($r['first_name'] . ' ' . $r['last_name'])) ?></td>
             <td class="small"><?= h($r['funktioner'] ?? '–') ?></td>
             <?php if ($isAdmin): ?>
+                <?php $forslag = $stats->feiSuggestMatches($r['first_name'], $r['last_name'], $alleOfficials); ?>
                 <td>
+                    <?php if ($forslag): ?>
+                        <div class="mini muted" style="margin-bottom:.3rem;display:flex;gap:.3rem;flex-wrap:wrap;align-items:center">
+                            Forslag:
+                            <?php foreach ($forslag as $f): ?>
+                                <form method="post" style="display:inline"
+                                      onsubmit="return confirm('Knyt <?= h(addslashes(trim($r['first_name'] . ' ' . $r['last_name']))) ?> til <?= h(addslashes($f['navn'])) ?>?')"><?= csrf_field() ?>
+                                    <input type="hidden" name="action" value="link_fei">
+                                    <input type="hidden" name="fei_id" value="<?= (int)$r['fei_id'] ?>">
+                                    <input type="hidden" name="official_navn" value="<?= h($f['navn']) ?>">
+                                    <button class="btn" type="submit" style="padding:.15rem .5rem;font-size:.8rem">
+                                        <?= h($f['navn']) ?> <span class="muted">(<?= h((string)$f['score']) ?>%)</span>
+                                    </button>
+                                </form>
+                            <?php endforeach; ?>
+                        </div>
+                    <?php endif; ?>
                     <form method="post" style="display:flex;gap:.3rem"
-                          onsubmit="return this.official_navn.value ? confirm('Knyt denne FEI-person til den valgte official?') : true;">
+                          onsubmit="return this.official_navn.value ? confirm('Knyt denne FEI-person til den valgte official?') : true;"><?= csrf_field() ?>
                         <input type="hidden" name="action" value="link_fei">
                         <input type="hidden" name="fei_id" value="<?= (int)$r['fei_id'] ?>">
                         <input type="text" name="official_navn" list="official-datalist" size="26"

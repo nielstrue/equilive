@@ -57,7 +57,7 @@ render_header('Migrering: ugyldige prop-id\'er', 'import');
         <p class="muted">... og <?= count($preview['rows']) - 200 ?> flere.</p>
     <?php endif; ?>
 
-    <form method="post" style="margin:.8rem 0">
+    <form method="post" style="margin:.8rem 0"><?= csrf_field() ?>
         <input type="hidden" name="action" value="apply">
         <label class="muted" style="font-size:.85rem">
             <input type="checkbox" name="confirm" value="1" required>

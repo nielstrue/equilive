@@ -16,7 +16,13 @@ $stats       = new Stats(db());
 $rows        = $stats->officialsOverview($search, $sort, $selectedAar, $selectedDisc, '', $selectedDist, $selectedType, $selectedStatus);
 $years       = $stats->years();
 $distrikter  = $stats->drfDistrikter();
-$discipliner = $stats->roleDisciplineOptions();
+// "organizer" (syntetisk kategori til roller der arrangerer/leder stævnet, ikke en
+// rigtig sportsgren) og "working_equitation" skal ikke kunne vælges i disciplin-filteret
+// her, selvom de indgår i rollekataloget (roles.php).
+$discipliner = array_values(array_filter(
+    $stats->roleDisciplineOptions(),
+    fn($d) => !in_array($d['disciplin'], ['organizer', 'working_equitation'], true)
+));
 $typer       = $stats->drfTyper();
 
 // Bevar årsfilteret ned til official-detaljesiden, saa dens tal matcher.

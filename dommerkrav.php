@@ -8,6 +8,25 @@ $result = $stats->springdommerKravStatus();
 $years  = $result['years'];
 $rows   = $result['rows'];
 
+// Matrix: antal officials pr. niveau (D/C/B/A, nedad) der opfylder/ikke opfylder
+// kravet (Ja/Nej/Opmærksom, hen ad). Samme klassificering som selve listen
+// herunder: D har et haardt Ja/Nej-krav, C/B/A viser Opmærksom (aldrig et
+// haardt Nej) naar totalkravet ikke er opfyldt i det aktuelle 2-aars-vindue.
+$niveauer = ['D', 'C', 'B', 'A'];
+$matrix   = array_fill_keys($niveauer, ['ja' => 0, 'nej' => 0, 'opmaerksom' => 0]);
+foreach ($rows as $r) {
+    if (!isset($matrix[$r['niveau']])) {
+        continue;
+    }
+    if ($r['opfylder']) {
+        $matrix[$r['niveau']]['ja']++;
+    } elseif ($r['niveau'] === 'D') {
+        $matrix[$r['niveau']]['nej']++;
+    } else {
+        $matrix[$r['niveau']]['opmaerksom']++;
+    }
+}
+
 render_header('Dommerkrav', 'status_krav');
 ?>
 <p class="muted"><a href="<?= h(url('status_krav.php')) ?>">← Opretholdelse af status</a> ·
@@ -38,6 +57,22 @@ render_header('Dommerkrav', 'status_krav');
             ingen data om dette i Equilive. Tjek manuelt.</li>
     </ul>
 </div>
+
+<table class="data" style="max-width:28rem;margin-bottom:1.2rem">
+    <thead>
+        <tr><th>Niveau</th><th class="r">Ja</th><th class="r">Nej</th><th class="r">Opmærksom</th></tr>
+    </thead>
+    <tbody>
+    <?php foreach ($niveauer as $niv): ?>
+        <tr>
+            <td><span class="badge badge-lvl badge-<?= h($niv) ?>"><?= h($niv) ?></span></td>
+            <td class="r"><?= (int)$matrix[$niv]['ja'] ?></td>
+            <td class="r"><?= (int)$matrix[$niv]['nej'] ?></td>
+            <td class="r"><?= (int)$matrix[$niv]['opmaerksom'] ?></td>
+        </tr>
+    <?php endforeach; ?>
+    </tbody>
+</table>
 
 <table class="data">
     <thead>

@@ -126,7 +126,7 @@ render_header('Import', 'import');
 <div class="grid2">
     <section>
         <h2>Hent live fra equilive.dk</h2>
-        <form method="post">
+        <form method="post"><?= csrf_field() ?>
             <input type="hidden" name="action" value="csv_url">
             <p><button class="btn" type="submit">Hent og indlæs nyeste CSV</button></p>
         </form>
@@ -136,7 +136,7 @@ render_header('Import', 'import');
     </section>
     <section>
         <h2>Upload fil</h2>
-        <form method="post" enctype="multipart/form-data">
+        <form method="post" enctype="multipart/form-data"><?= csrf_field() ?>
             <p><input type="file" name="csv" accept=".csv,text/csv"></p>
             <p><button class="btn" type="submit">Indlæs CSV</button></p>
         </form>
@@ -149,7 +149,7 @@ render_header('Import', 'import');
 <div class="grid2">
     <section>
         <h3>Hent live fra rideforbund.dk</h3>
-        <form method="post">
+        <form method="post"><?= csrf_field() ?>
             <input type="hidden" name="action" value="drf">
             <input type="hidden" name="drf_source" value="live">
             <p><button class="btn" type="submit">Hent DRF-liste live</button></p>
@@ -159,7 +159,7 @@ render_header('Import', 'import');
     </section>
     <section>
         <h3>Upload fil</h3>
-        <form method="post" enctype="multipart/form-data">
+        <form method="post" enctype="multipart/form-data"><?= csrf_field() ?>
             <input type="hidden" name="action" value="drf">
             <input type="hidden" name="drf_source" value="file">
             <p><input type="file" name="drf_html" accept=".html,.htm,text/html"></p>
@@ -173,7 +173,7 @@ render_header('Import', 'import');
 <div class="grid2">
     <section>
         <h3>Hent live fra rideforbund.dk</h3>
-        <form method="post">
+        <form method="post"><?= csrf_field() ?>
             <input type="hidden" name="action" value="drf_clubs">
             <input type="hidden" name="drf_source" value="live">
             <p><button class="btn" type="submit">Hent DRF-klubliste live</button></p>
@@ -184,7 +184,7 @@ render_header('Import', 'import');
     </section>
     <section>
         <h3>Upload fil</h3>
-        <form method="post" enctype="multipart/form-data">
+        <form method="post" enctype="multipart/form-data"><?= csrf_field() ?>
             <input type="hidden" name="action" value="drf_clubs">
             <input type="hidden" name="drf_source" value="file">
             <p><input type="file" name="drf_clubs_html" accept=".html,.htm,text/html"></p>

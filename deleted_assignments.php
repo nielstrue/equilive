@@ -53,7 +53,7 @@ render_header('Slettede tildelinger', 'deleted_assignments');
             <td class="nowrap"><?= h($r['deleted_at']) ?></td>
             <td><?= h($r['deleted_by_navn'] ?? '–') ?></td>
             <td>
-                <form method="post" onsubmit="return confirm('Fortryd sletningen af <?= h($r['official']) ?> - <?= h($r['orig_rolle']) ?>? Tildelingen kan blive genskabt ved næste import.');">
+                <form method="post" onsubmit="return confirm('Fortryd sletningen af <?= h($r['official']) ?> - <?= h($r['orig_rolle']) ?>? Tildelingen kan blive genskabt ved næste import.');"><?= csrf_field() ?>
                     <input type="hidden" name="action" value="undo">
                     <input type="hidden" name="id" value="<?= (int)$r['id'] ?>">
                     <button class="btn" type="submit">Fortryd</button>

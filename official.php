@@ -46,7 +46,7 @@ back_link(url('officials.php'), 'Alle officials');
 <?php endif; ?>
 
 <?php if ($statusError): ?><div class="notice error"><?= h($statusError) ?></div><?php endif; ?>
-<form method="post" style="display:flex;gap:.4rem;align-items:center;margin:.6rem 0">
+<form method="post" style="display:flex;gap:.4rem;align-items:center;margin:.6rem 0"><?= csrf_field() ?>
     <input type="hidden" name="action" value="set_status">
     <label class="muted" style="font-size:.85rem">Status:
         <select name="status">
@@ -110,7 +110,9 @@ back_link(url('officials.php'), 'Alle officials');
         </table>
     <?php else: ?>
         <p class="muted">Denne official er ikke matchet på den høstede FEI-liste.
-            Det kan skyldes stavning/navneforskelle – se <a href="<?= h(url('fei.php')) ?>">FEI-afstemningen</a>.</p>
+            <?php if (has_permission('ADMIN_ACCESS')): ?>
+                Det kan skyldes stavning/navneforskelle – se <a href="<?= h(url('fei.php')) ?>">FEI-afstemningen</a>.
+            <?php endif; ?></p>
     <?php endif; ?>
 </section>
 
