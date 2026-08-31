@@ -29,8 +29,11 @@ directory og klar til senere hosting.
   `clubs.distrikt` kan holdes ajour mod Dansk Ride Forbunds egne data.
 - Pr.-stævne høstning af klassedetaljer (hest/pony, sværhedsgrad) fra DRF's
   stævneresultat-side, udløst af en knap på stævnets side.
-- **Login og rollebaseret adgang**: alle sider kræver login; import af data
-  (CSV-upload, DRF-høstning) samt dublet-fletning kræver desuden admin-rollen.
+- **Login og RBAC-adgang**: alle sider kræver login; fire roller (admin, editor,
+  user, readonly) styrer adgang via faste rettigheder (se "Login og adgang"
+  nedenfor). Import af data (CSV-upload, DRF-høstning) samt dublet-fletning
+  kræver `ADMIN_ACCESS`; brugeradministration kræver `USER_READ`/`USER_WRITE`/
+  `USER_DELETE`.
 - **Alias-historik for officials**: når to officials flettes (fx efter et
   navneskift som "Jens Hansen" → "Jens Fidipus Hansen"), gemmes det gamle navn
   som alias, så både fremtidig CSV-import og DRF-matchning stadig genkender
@@ -77,29 +80,101 @@ mindst én klasse ligger under den højeste rang.
 
 ## Login og adgang (brugere/roller)
 
-Alle sider kræver login. Der er to roller:
-- **user** – kan se alle sider (officials, klubber, stævner, DRF-afstemning m.m.).
-- **admin** – som `user`, men kan derudover tilgå **Import** (CSV-upload samt
-  DRF-høstning af officials/klubber). Import-linket i menuen vises kun for admins.
+Alle sider kræver login. Adgang er rollebaseret (RBAC) med fire roller, hver
+med et fast sæt rettigheder (se `role_permissions()` i `inc/bootstrap.php`):
+
+| Rolle | USER_READ | USER_WRITE | USER_DELETE | REPORT_VIEW | ADMIN_ACCESS |
+|---|---|---|---|---|---|
+| **admin** | ✓ | ✓ | ✓ | ✓ | ✓ |
+| **editor** | ✓ | ✓ | – | ✓ | – |
+| **user** | – | – | – | ✓ | – |
+| **readonly** | – | – | – | ✓ | – |
+
+`ADMIN_ACCESS` styrer adgang til **Import** (CSV-upload, DRF-høstning),
+dublet-/klub-fletning og slettede tildelinger. `USER_READ`/`USER_WRITE`/
+`USER_DELETE` styrer siden **Brugere** (vises kun i menuen med `USER_READ`) –
+editors kan altså oprette og redigere brugere, men ikke slette dem eller nå
+Import. `REPORT_VIEW` (alle roller) dækker resten af appen (officials,
+klubber, stævner m.m.).
+
+### Brugeradministration (siden "Brugere")
+Admins og editors kan oprette, redigere, (de)aktivere og nulstille kodeord for
+brugere via **Brugere** i menuen – ingen kommandolinje nødvendig længere.
+Kun admins kan slette en bruger. Ved oprettelse (eller nulstilling af
+kodeord) foreslår siden et 1. gangs-kodeord der er nemt at huske (to
+ridesports-ord + to cifre, fx `HestSadel42`) – der sendes ikke mail, så
+login-oplysningerne skal gives til brugeren manuelt. Brugeren **skal skifte
+kodeordet ved 1. login** (`must_change_password`), og har ingen adgang til
+resten af appen før det er gjort – kodeordssiden viser en styrke-indikator
+og kræver mindst 8 tegn, ét stort bogstav og ét tal. Brugeroversigten viser
+også hvornår hver bruger sidst har logget ind, samlet antal logins, og om en
+bruger afventer sit 1. login.
+
+Sikkerhedsspærrer i siden: man kan ikke slette/deaktivere sin egen bruger,
+fjerne sin egen admin-rolle, eller fjerne/deaktivere/slette den sidste
+aktive admin – så man kan ikke låse sig selv (eller alle) ude ved en fejl.
+
+### users deles med Prizesim i produktion
+`users` (id/name/email/password_hash/role/is_active/activated_at) er delt med
+en anden applikation (Prizesim) i produktion - samme konto logger ind begge
+steder. Kun `users.role`-værdien er fælles (udvidet til de fire roller
+ovenfor - eksisterende `user`/`admin`-konti er uændrede og virker som før).
+ALT Equilive-specifikt (tvunget 1. gangs-kodeord, login-log, rolle→rettighed)
+ligger i stedet i egne tabeller med `equilive_`-præfiks
+(`equilive_user_state`, `equilive_role_permissions`) - IKKE som ekstra
+kolonner på `users` og IKKE i en tabel der kunne hedde noget Prizesim
+allerede bruger. Se noten øverst i `sql/migrate_add_user_management.sql`.
+
+**Bemærk:** "Slet"-knappen på **Brugere**-siden sletter rækken i den DELTE
+`users`-tabel - en bruger der også har adgang til Prizesim mister altså den
+adgang også. Brug "Deaktiver" i stedet, medmindre kontoen reelt skal væk
+fra begge systemer.
 
 ### Opgradér en eksisterende database
 ```
 mysql -u root equilive < sql\migrate_add_user_roles.sql
+mysql -u root equilive < sql\migrate_add_user_management.sql
+mysql -u root equilive < sql\migrate_add_role_permissions.sql
 ```
-Tilføjer `users.role` og gør den ældste bruger til admin. Nye installationer
-får kolonnen automatisk fra `sql/schema.sql`.
+Første fil (findes fra før) tilføjer `users.role` og gør den ældste bruger
+til admin. Anden fil udvider rollerne til de fire ovenfor og opretter
+`equilive_user_state`. Tredje fil opretter og seeder
+`equilive_role_permissions`. Nye installationer får det hele automatisk fra
+`sql/schema.sql`.
 
-### Opret/opdater en bruger
-Der er ingen selvbetjent registrering – brugere oprettes fra kommandolinjen:
+### Opret/opdater en bruger fra kommandolinjen
+Til den allerførste admin (før nogen kan logge ind og bruge **Brugere**-siden),
+eller til scripting:
 ```
 php cli\create_user.php dommer@klub.dk "Jane Dommer" "MinKode123!" user
 php cli\create_user.php admin@klub.dk "Admin Adminsen" "MinKode123!" admin
 ```
-Køres den igen med samme email, opdateres navn/adgangskode/rolle i stedet for
-at oprette en dublet. Roller kan også ændres direkte i databasen:
-```sql
-UPDATE users SET role = 'admin' WHERE email = '...';
-```
+Roller: `admin`, `editor`, `user`, `readonly`. Køres den igen med samme
+email, opdateres navn/adgangskode/rolle i stedet for at oprette en dublet -
+og kodeordet skal skiftes ved næste login, ligesom ved oprettelse i GUI'et.
+
+## Sikkerhed (svar på security-scan)
+
+`inc/bootstrap.php` sætter, for alle ikke-CLI requests:
+- **CSRF-beskyttelse**: alle POST-requests skal bære et gyldigt token
+  (`csrf_valid()`), ellers 403. Alle `<form method="post">` i appen indeholder
+  `csrf_field()` - en ny formular skal blot huske at tilføje den samme.
+- **Sikkerhedsheadere**: `Content-Security-Policy` (self-only, `'unsafe-inline'`
+  tilladt for script-/style-src pga. udbredt brug af `onclick`/`onsubmit`/
+  `style=""` i templates - default-src blokerer stadig alt cross-domain
+  indhold), `X-Frame-Options: SAMEORIGIN` + `frame-ancestors 'self'`
+  (anti-clickjacking), `X-Content-Type-Options: nosniff`, `Referrer-Policy`,
+  og `X-Powered-By` fjernes. `.htaccess` forsøger desuden at skjule
+  `Server`-headeren (kræver mod_headers - fuld fjernelse af Apache-version
+  kræver `ServerTokens Prod`/`ServerSignature Off` i httpd.conf, uden for
+  hvad `.htaccess` kan sætte).
+- **Cookies**: session-cookien har allerede `HttpOnly` + `SameSite=Lax`, og
+  `Secure` når siden køres over HTTPS (autodetekteres - virker ikke bag en
+  reverse proxy der terminerer TLS uden at videresende det, hvis appen
+  nogensinde kører sådan).
+- Alle scripts/stylesheets er samme-origin (`assets/`) - ingen ekstern
+  CDN indlæses, så "Sub Resource Integrity mangler" og "cross-domain script
+  inclusion" er ikke reelle fund her.
 
 ## Ugentlig import (automatisk)
 
@@ -303,7 +378,9 @@ equilive/
 ├─ index.php            Forside/overblik
 ├─ login.php            Log ind
 ├─ logout.php           Log ud
-├─ import.php           Upload + kør import (kræver admin-rolle)
+├─ brugere.php          Brugeradministration (RBAC-roller, kodeord) – kræver USER_READ
+├─ skift_kodeord.php    Skift/1. gangs-kodeord (styrke-indikator)
+├─ import.php           Upload + kør import (kræver ADMIN_ACCESS)
 ├─ officials.php        Officials-statistik (liste)
 ├─ official.php         Official – detalje
 ├─ roles.php            Rollekatalog (rolle → disciplin)

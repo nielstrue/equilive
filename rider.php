@@ -1,7 +1,7 @@
 <?php
 require __DIR__ . '/inc/bootstrap.php';
 require __DIR__ . '/inc/layout.php';
-require_login();
+require_admin(); // TODO: åbn for alle roller igen når rytterfunktionen er færdigudviklet
 
 $id    = (int)($_GET['id'] ?? 0);
 $stats = new Stats(db());

@@ -95,7 +95,7 @@ render_header('DRF-klassedetaljer (backfill)', 'import');
     <?php endif; ?>
 <?php endif; ?>
 
-<form method="post" style="margin:.8rem 0;display:flex;gap:1rem;align-items:flex-start;flex-wrap:wrap">
+<form method="post" style="margin:.8rem 0;display:flex;gap:1rem;align-items:flex-start;flex-wrap:wrap"><?= csrf_field() ?>
     <input type="hidden" name="action" value="harvest_batch">
     <fieldset style="border:0;padding:0;margin:0">
         <legend class="muted" style="font-size:.85rem">År</legend>

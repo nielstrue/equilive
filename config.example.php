@@ -65,4 +65,27 @@ return [
     // Skift til en tilfældig streng (fx via `php -r "echo bin2hex(random_bytes(24));"`),
     // og hold den hemmelig - alle med denne værdi kan udløse batch-jobbet.
     'cron_secret' => 'RET_MIG_TIL_EN_TILFAELDIG_HEMMELIGHED',
+
+    // Fuld URL til appen (med skema+host) - bruges i adgangsmailen (se inc/Mailer.php),
+    // hvor base_path alene ikke er nok.
+    'app_url' => $isLocal ? 'http://localhost/equilive' : 'https://DIT-DOMAENE/equilive',
+
+    // SMTP-oplysninger til adgangsmails (brugere.php - knappen "Send adgangsmail").
+    // Sendes ALDRIG automatisk, kun naar en admin selv trykker på knappen.
+    // Ret host/port/smtp_secure til det din hosting/mailudbyder oplyser under
+    // "Udgående indstillinger (SMTP)" - fx port 465+'ssl' eller port 587+'tls'.
+    'mail' => [
+        'host'        => 'DIN_SMTP_SERVER',
+        'port'        => 465,
+        'smtp_secure' => 'ssl', // 'ssl' (port 465) eller 'tls' (STARTTLS, port 587)
+        'username'    => 'DIN_SMTP_BRUGER',
+        'password'    => 'DIT_SMTP_PASSWORD',
+        'from_email'  => 'DIN_AFSENDER@DIT-DOMAENE',
+        'from_name'   => 'Equilive',
+    ],
+
+    // Saet til true for at faa den fulde SMTP-samtale skrevet til PHP's error_log ved
+    // fejlsøgning (uafhaengig af 'debug' herover, som ogsaa viser PHP-fejl i browseren).
+    // Husk at saette den tilbage til false igen bagefter.
+    'mail_debug' => false,
 ];

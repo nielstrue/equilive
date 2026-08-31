@@ -12,6 +12,8 @@
  *   php cli/create_user.php admin@klub.dk "Admin Adminsen" "MinKode123!" admin
  *
  * Findes brugeren allerede (samme email), opdateres navn/adgangskode/rolle.
+ * Kodeordet sat her er et 1. gangs-kodeord - brugeren skal skifte det ved
+ * næste login (samme regel som når en bruger oprettes via siden "Brugere").
  */
 require __DIR__ . '/../inc/bootstrap.php';
 
@@ -22,8 +24,12 @@ if (!$email || !$name || !$password) {
     fwrite(STDERR, "Brug: php cli/create_user.php <email> <navn> <adgangskode> [role]\n");
     exit(1);
 }
-if (!in_array($role, ['user', 'admin'], true)) {
-    fwrite(STDERR, "Ukendt rolle '$role' - skal være 'user' eller 'admin'.\n");
+if (!in_array($role, known_roles(), true)) {
+    fwrite(STDERR, "Ukendt rolle '$role' - skal være en af: " . implode(', ', known_roles()) . ".\n");
+    exit(1);
+}
+if ($fejl = validate_password($password)) {
+    fwrite(STDERR, "$fejl\n");
     exit(1);
 }
 
@@ -35,12 +41,17 @@ if ($existing !== false) {
         'UPDATE users SET name = ?, password_hash = ?, role = ?, is_active = 1 WHERE id = ?',
         [$name, $hash, $role, $existing]
     );
-    echo "Opdaterede bruger #$existing ($email), rolle=$role.\n";
+    ensure_equilive_user_state((int)$existing);
+    db()->run('UPDATE equilive_user_state SET must_change_password = 1 WHERE user_id = ?', [$existing]);
+    echo "Opdaterede bruger #$existing ($email), rolle=$role. Skal skifte kodeord ved næste login.\n";
 } else {
     db()->run(
         'INSERT INTO users (name, address, email, password_hash, role, is_active, activated_at)
          VALUES (?, ?, ?, ?, ?, 1, NOW())',
         [$name, '', $email, $hash, $role]
     );
-    echo "Oprettede ny bruger ($email), rolle=$role.\n";
+    $newId = db()->lastId();
+    ensure_equilive_user_state((int)$newId);
+    db()->run('UPDATE equilive_user_state SET must_change_password = 1 WHERE user_id = ?', [$newId]);
+    echo "Oprettede ny bruger ($email), rolle=$role. Skal skifte kodeord ved 1. login.\n";
 }

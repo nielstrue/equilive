@@ -7,6 +7,28 @@ $stats = new Stats(db());
 $d = $stats->dashboard();
 $perYear = $stats->showsPerYear();
 
+// Definitioner af begreber brugt i programmet - udbygges løbende, se index.php.
+$definitioner = [
+    'Rolle' => [
+        'Rollen angiver, hvilken funktion en official varetager i en given klasse — for eksempel '
+            . 'dommer, banebygger eller stævneleder.',
+        'Oplysningen hentes direkte fra Equipe, hvor det er arrangøren, der tilknytter officials til '
+            . 'klasserne. EquiLive viser derfor rollerne, som de er registreret ved stævnet.',
+        'Det betyder også, at data kan være ufuldstændige: rollerne bliver ikke altid brugt konsekvent '
+            . 'fra stævne til stævne, og enkelte klasser kan mangle en tilknyttet official.',
+    ],
+    'Type' => [
+        'Typen fortæller, hvilken slags official personen er uddannet og godkendt som — for eksempel '
+            . '"Springdommer – C". Bogstavet angiver niveauet.',
+        'Oplysningen stammer fra rideforbund.dk og følger personen, uanset hvilke stævner vedkommende '
+            . 'deltager i. De fleste officials har flere typer, fordi de er godkendt inden for flere '
+            . 'funktioner eller niveauer.',
+        'En official optræder først på listen i EquiLive, når vedkommende for første gang har været '
+            . 'tilknyttet en klasse ved et stævne. Nyudnævnte officials kan derfor mangle, indtil de har '
+            . 'haft deres første opgave.',
+    ],
+];
+
 render_header('Forside', '');
 $periodStart = $d['period_start'] ? (int)substr($d['period_start'], 0, 4) : null;
 $periodEnd   = $d['period_end']   ? (int)substr($d['period_end'], 0, 4) : null;
@@ -65,6 +87,24 @@ $periodEnd   = $d['period_end']   ? (int)substr($d['period_end'], 0, 4) : null;
     <?php else: ?>
         <p class="muted">Ingen import endnu.</p>
     <?php endif; ?>
+</section>
+
+<section style="margin-top:1.6rem">
+    <h2>Definitioner</h2>
+    <div class="notice">
+        <table class="kv">
+            <?php foreach ($definitioner as $term => $afsnit): ?>
+                <tr>
+                    <th><?= h($term) ?></th>
+                    <td>
+                        <?php foreach ($afsnit as $i => $p): ?>
+                            <p style="margin:<?= $i === 0 ? '0' : '.5rem' ?> 0 0"><?= h($p) ?></p>
+                        <?php endforeach; ?>
+                    </td>
+                </tr>
+            <?php endforeach; ?>
+        </table>
+    </div>
 </section>
 <?php
 render_footer();

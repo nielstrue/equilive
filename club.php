@@ -53,7 +53,7 @@ back_link(url('clubs.php'), 'Alle klubber');
 
 <?php if ($isAdmin): ?>
     <?php if ($statusError): ?><div class="notice error"><?= h($statusError) ?></div><?php endif; ?>
-    <form method="post" style="display:flex;gap:.4rem;align-items:center;margin:.6rem 0;flex-wrap:wrap">
+    <form method="post" style="display:flex;gap:.4rem;align-items:center;margin:.6rem 0;flex-wrap:wrap"><?= csrf_field() ?>
         <input type="hidden" name="action" value="update_club">
         <label class="muted" style="font-size:.85rem">Navn:
             <input type="text" name="navn" value="<?= h($club['navn']) ?>" size="30" required>

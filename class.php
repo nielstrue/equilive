@@ -150,7 +150,7 @@ back_link(url('show.php?id=' . (int)$class['show_id']), $class['prop']);
         <tr>
             <td><a href="<?= h(url('official.php?id=' . (int)$a['official_id']) . '&' . from_params($class['klassenavn'])) ?>"><?= h($a['navn']) ?></a></td>
             <td>
-                <form method="post" style="display:flex;gap:.4rem">
+                <form method="post" style="display:flex;gap:.4rem"><?= csrf_field() ?>
                     <input type="hidden" name="action" value="update_rolle">
                     <input type="hidden" name="assignment_id" value="<?= (int)$a['id'] ?>">
                     <select name="rolle">
@@ -164,7 +164,7 @@ back_link(url('show.php?id=' . (int)$class['show_id']), $class['prop']);
             <td><?= h($a['nummer'] ?? '–') ?></td>
             <?php if ($isAdmin): ?>
             <td>
-                <form method="post" onsubmit="return confirm('Slet denne tildeling (<?= h($a['navn']) ?> - <?= h($current) ?>) helt? Kan ikke fortrydes.');">
+                <form method="post" onsubmit="return confirm('Slet denne tildeling (<?= h($a['navn']) ?> - <?= h($current) ?>) helt? Kan ikke fortrydes.');"><?= csrf_field() ?>
                     <input type="hidden" name="action" value="delete_assignment">
                     <input type="hidden" name="assignment_id" value="<?= (int)$a['id'] ?>">
                     <button class="btn" type="submit" style="background:#c0392b">Slet</button>
@@ -180,7 +180,7 @@ back_link(url('show.php?id=' . (int)$class['show_id']), $class['prop']);
 </table>
 
 <h3>Tilføj tildeling</h3>
-<form method="post" style="display:flex;gap:.4rem;align-items:center;flex-wrap:wrap;margin:.6rem 0">
+<form method="post" style="display:flex;gap:.4rem;align-items:center;flex-wrap:wrap;margin:.6rem 0"><?= csrf_field() ?>
     <input type="hidden" name="action" value="add_assignment">
     <select name="official_id" required>
         <option value="">– vælg official –</option>

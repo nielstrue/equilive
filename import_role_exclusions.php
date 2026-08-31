@@ -62,7 +62,7 @@ render_header('Ekskluderede import-roller', 'import');
             <td><?= h($e['rolle']) ?></td>
             <td><?= h($e['created_at']) ?></td>
             <td>
-                <form method="post" onsubmit="return confirm('Fjern \'<?= h($e['rolle']) ?>\' fra eksklusionslisten? Rollen importeres igen fremover.');">
+                <form method="post" onsubmit="return confirm('Fjern \'<?= h($e['rolle']) ?>\' fra eksklusionslisten? Rollen importeres igen fremover.');"><?= csrf_field() ?>
                     <input type="hidden" name="action" value="remove">
                     <input type="hidden" name="id" value="<?= (int)$e['id'] ?>">
                     <button class="btn" type="submit" style="background:#c0392b">Fjern</button>
@@ -77,7 +77,7 @@ render_header('Ekskluderede import-roller', 'import');
 </table>
 
 <h2>Tilføj rolle til eksklusionslisten</h2>
-<form method="post" style="display:flex;gap:.4rem;align-items:center;flex-wrap:wrap;margin:.6rem 0">
+<form method="post" style="display:flex;gap:.4rem;align-items:center;flex-wrap:wrap;margin:.6rem 0"><?= csrf_field() ?>
     <input type="hidden" name="action" value="add">
     <input type="text" name="rolle" list="role-candidates" placeholder="Rollenavn, fx steward" required>
     <datalist id="role-candidates">

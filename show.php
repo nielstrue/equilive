@@ -107,7 +107,7 @@ back_link($backUrl, 'Alle stævner');
 <?php endif; ?>
 
 <?php if ($statusError): ?><div class="notice error"><?= h($statusError) ?></div><?php endif; ?>
-<form method="post" style="display:flex;gap:.4rem;align-items:center;margin:.6rem 0;flex-wrap:wrap">
+<form method="post" style="display:flex;gap:.4rem;align-items:center;margin:.6rem 0;flex-wrap:wrap"><?= csrf_field() ?>
     <input type="hidden" name="action" value="set_status">
     <label class="muted" style="font-size:.85rem">Status:
         <select name="status">
@@ -150,7 +150,7 @@ back_link($backUrl, 'Alle stævner');
     </div>
 <?php endif; ?>
 
-<form method="post" style="margin:.6rem 0;display:flex;gap:.6rem;align-items:center;flex-wrap:wrap">
+<form method="post" style="margin:.6rem 0;display:flex;gap:.6rem;align-items:center;flex-wrap:wrap"><?= csrf_field() ?>
     <input type="hidden" name="action" value="harvest_details">
     <button class="btn" type="submit"<?= $s['prop_unknown'] ? ' disabled' : '' ?>>
         <?= $s['detail_harvested_at'] ? 'Genindlæs klassedetaljer fra DRF' : 'Hent klassedetaljer fra DRF' ?>
@@ -162,7 +162,7 @@ back_link($backUrl, 'Alle stævner');
     <?php endif; ?>
 </form>
 
-<form method="post" style="margin:.6rem 0">
+<form method="post" style="margin:.6rem 0"><?= csrf_field() ?>
     <input type="hidden" name="action" value="harvest_riders">
     <button class="btn" type="submit"<?= $s['resultat_status'] !== 'Resultatbehandling færdig' ? ' disabled' : '' ?>>
         <?= $s['riders_harvested_at'] ? 'Genindlæs ryttere fra DRF' : 'Hent ryttere fra DRF' ?>
@@ -186,7 +186,7 @@ back_link($backUrl, 'Alle stævner');
             <td class="r"><?= (int)$o['klasser'] ?></td>
             <?php if ($isAdmin): ?>
             <td>
-                <form method="post" onsubmit="return confirm('Slet rollen \'<?= h($o['rolle']) ?>\' for <?= h($o['navn']) ?> på alle <?= (int)$o['klasser'] ?> klasse(r) i dette stævne? Kan ikke fortrydes.');">
+                <form method="post" onsubmit="return confirm('Slet rollen \'<?= h($o['rolle']) ?>\' for <?= h($o['navn']) ?> på alle <?= (int)$o['klasser'] ?> klasse(r) i dette stævne? Kan ikke fortrydes.');"><?= csrf_field() ?>
                     <input type="hidden" name="action" value="delete_official_role">
                     <input type="hidden" name="official_id" value="<?= (int)$o['official_id'] ?>">
                     <input type="hidden" name="rolle" value="<?= h($o['rolle']) ?>">

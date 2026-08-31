@@ -44,14 +44,14 @@ function render_header(string $title, string $active = ''): void
         'officials' => 'Officials',
         'status_krav' => 'Opretholdelse af status',
         'officials_uden_rolle' => 'Uden rolle',
-        'roles'     => 'Roller',
         'clubs'     => 'Klubber',
         'shows'     => 'Stævner',
-        'riders'    => 'Ryttere',
         'drf'       => 'DRF-liste',
-        'fei'       => 'FEI-liste',
     ];
-    if (($user['role'] ?? '') === 'admin') {
+    if ($user && has_permission('ADMIN_ACCESS', $user)) {
+        $nav['fei'] = 'FEI-liste';
+        $nav['roles'] = 'Roller';
+        $nav['riders'] = 'Ryttere'; // TODO: flyt tilbage til alle roller når rytterfunktionen er færdigudviklet
         $nav['officials_duplicates'] = 'Dubletter';
         $nav['officials_merge'] = 'Flet officials';
         $nav['clubs_merge'] = 'Flet klubber';
@@ -59,6 +59,9 @@ function render_header(string $title, string $active = ''): void
         $nav['import_riders'] = 'Ryttere-import';
         $nav['warnings'] = 'Advarsler';
         $nav['deleted_assignments'] = 'Slettede tildelinger';
+    }
+    if ($user && has_permission('USER_READ', $user)) {
+        $nav['brugere'] = 'Brugere';
     }
     ?><!DOCTYPE html>
 <html lang="da">
@@ -68,18 +71,25 @@ function render_header(string $title, string $active = ''): void
 <body>
 <header class="topbar">
     <a class="brand" href="<?= h(url('')) ?>"><?= render_logo(30) ?> Equilive</a>
-    <nav>
-        <?php foreach ($nav as $slug => $label): ?>
-            <a href="<?= h(url($slug === '' ? '' : $slug . '.php')) ?>"
-               class="<?= $active === $slug ? 'active' : '' ?>"><?= h($label) ?></a>
-        <?php endforeach; ?>
-    </nav>
-    <?php if ($user): ?>
-        <span class="topbar-user">
-            <?= h($user['name']) ?><?= $user['role'] === 'admin' ? ' <span class="badge badge-drf">admin</span>' : '' ?>
-            · <a href="<?= h(url('logout.php')) ?>">Log ud</a>
-        </span>
-    <?php endif; ?>
+    <button type="button" class="nav-toggle" id="nav-toggle" aria-label="Åbn menu"
+            aria-expanded="false" aria-controls="topbar-collapse">
+        <span class="nav-toggle-bar"></span><span class="nav-toggle-bar"></span><span class="nav-toggle-bar"></span>
+    </button>
+    <div class="topbar-collapse" id="topbar-collapse">
+        <nav>
+            <?php foreach ($nav as $slug => $label): ?>
+                <a href="<?= h(url($slug === '' ? '' : $slug . '.php')) ?>"
+                   class="<?= $active === $slug ? 'active' : '' ?>"><?= h($label) ?></a>
+            <?php endforeach; ?>
+        </nav>
+        <?php if ($user): ?>
+            <span class="topbar-user">
+                <?= h($user['name']) ?> <span class="badge badge-muted"><?= h(role_label($user['role'])) ?></span>
+                · <a href="<?= h(url('skift_kodeord.php')) ?>">Skift kodeord</a>
+                · <a href="<?= h(url('logout.php')) ?>">Log ud</a>
+            </span>
+        <?php endif; ?>
+    </div>
 </header>
 <main class="container">
 <?php

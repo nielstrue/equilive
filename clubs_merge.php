@@ -50,7 +50,7 @@ render_header('Flet klubber', 'clubs_merge');
         <a class="btn" href="<?= h(url('club.php?id=' . (int)$result['keep_id'])) ?>">Se den flettede klub →</a>
     </div>
 <?php else: ?>
-<form method="post" onsubmit="return confirm('Sikker på at du vil flette disse to klubber? Handlingen kan ikke fortrydes.');">
+<form method="post" onsubmit="return confirm('Sikker på at du vil flette disse to klubber? Handlingen kan ikke fortrydes.');"><?= csrf_field() ?>
     <p>
         <label>Behold (den korrekte post):<br>
         <select name="keep_id" required>

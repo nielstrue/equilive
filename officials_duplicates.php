@@ -71,7 +71,7 @@ render_header('Mulige dubletter', 'officials_duplicates');
 
 <p class="muted"><?= count($candidates) ?> mulige par fundet.</p>
 
-<form method="post" onsubmit="return confirm('Sikker på at du vil flette alle markerede par? Handlingen kan ikke fortrydes.');">
+<form method="post" onsubmit="return confirm('Sikker på at du vil flette alle markerede par? Handlingen kan ikke fortrydes.');"><?= csrf_field() ?>
 <table class="data">
     <thead>
         <tr>

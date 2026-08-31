@@ -3,4 +3,13 @@
     Require all denied
 </FilesMatch>
 RewriteEngine On
-RewriteRule ^(inc|sql|cli|data)/ - [F,L]
+RewriteRule ^(inc|sql|cli|data|phpmailer)/ - [F,L]
+
+# Skjul webserverens versionsnummer i "Server"-headeren (svar på security-scan).
+# Virker kun hvis mod_headers er aktiveret - den fulde løsning kræver desuden
+# "ServerTokens Prod" og "ServerSignature Off" i httpd.conf (kan ikke sættes fra
+# .htaccess). X-Powered-By (PHP-versionen) fjernes i stedet fra inc/bootstrap.php.
+<IfModule mod_headers.c>
+    Header unset Server
+    Header always unset Server
+</IfModule>

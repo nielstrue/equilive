@@ -1,7 +1,7 @@
 <?php
 require __DIR__ . '/inc/bootstrap.php';
 require __DIR__ . '/inc/layout.php';
-require_login();
+require_admin();
 
 $error = null;
 $ok    = null;
@@ -141,7 +141,7 @@ render_header('Roller', 'roles');
                 <td><?= h($u['rolle']) ?></td>
                 <td class="r"><?= number_format((int)$u['antal'], 0, ',', '.') ?></td>
                 <td>
-                    <form method="post">
+                    <form method="post"><?= csrf_field() ?>
                         <input type="hidden" name="action" value="add_role">
                         <input type="hidden" name="navn" value="<?= h($u['rolle']) ?>">
                         <button class="btn" type="submit">Tilføj til katalog</button>

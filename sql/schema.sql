@@ -384,10 +384,42 @@ CREATE TABLE IF NOT EXISTS  users (
   `address` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
   `email` varchar(190) COLLATE utf8mb4_unicode_ci NOT NULL,
   `password_hash` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `role` enum('user','admin') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'user',
+  `role` enum('admin','editor','user','readonly') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'user',
   `is_active` tinyint(1) NOT NULL DEFAULT '0',
   `activated_at` datetime DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `email` (`email`)
 ) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Equilive-alene brugertilstand (tvunget kodeordsskift, login-log) - holdt UDEN
+-- FOR users, som i produktion deles med en anden applikation (Prizesim). Se
+-- noten i sql/migrate_add_user_management.sql. Bevidst UDEN foreign key mod
+-- users, af samme grund som deleted_assignments.deleted_by.
+CREATE TABLE IF NOT EXISTS equilive_user_state (
+    user_id               INT UNSIGNED NOT NULL,
+    must_change_password  TINYINT(1) NOT NULL DEFAULT 0,
+    last_login_at         DATETIME NULL,
+    login_count           INT UNSIGNED NOT NULL DEFAULT 0,
+    PRIMARY KEY (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Rolle → rettighed (RBAC), redigerbar i GUI'et under "Brugere" → "Rolle-rettigheder".
+-- Navngivet equilive_-præfikset af samme grund som equilive_user_state.
+CREATE TABLE IF NOT EXISTS equilive_role_permissions (
+    role       VARCHAR(20) NOT NULL,
+    permission VARCHAR(40) NOT NULL,
+    PRIMARY KEY (role, permission)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT IGNORE INTO equilive_role_permissions (role, permission) VALUES
+    ('admin',    'USER_READ'),
+    ('admin',    'USER_WRITE'),
+    ('admin',    'USER_DELETE'),
+    ('admin',    'REPORT_VIEW'),
+    ('admin',    'ADMIN_ACCESS'),
+    ('editor',   'USER_READ'),
+    ('editor',   'USER_WRITE'),
+    ('editor',   'REPORT_VIEW'),
+    ('user',     'REPORT_VIEW'),
+    ('readonly', 'REPORT_VIEW');
