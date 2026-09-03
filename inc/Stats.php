@@ -1331,7 +1331,9 @@ class Stats
         return $this->db->all(
             "SELECT aar, COUNT(*) AS staevner,
                     (SELECT COUNT(*) FROM classes c JOIN shows s2 ON s2.id = c.show_id
-                        WHERE s2.aar = s.aar AND s2.status = 'aktiv') AS klasser
+                        WHERE s2.aar = s.aar AND s2.status = 'aktiv') AS klasser,
+                    (SELECT COALESCE(SUM(c.starter), 0) FROM classes c JOIN shows s2 ON s2.id = c.show_id
+                        WHERE s2.aar = s.aar AND s2.status = 'aktiv') AS starter
              FROM shows s
              WHERE aar IS NOT NULL AND s.status = 'aktiv'
              GROUP BY aar ORDER BY aar DESC"

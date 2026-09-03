@@ -59,7 +59,7 @@ $pendingClassSelected = $classImporter->pendingCount($selectedYears);
 $riderImporter  = new RiderDetailImporter(db());
 $pendingRiders  = $riderImporter->pendingCount();
 
-render_header('Ryttere (backfill)', 'import');
+render_header('Ryttere (backfill)', 'import_riders');
 ?>
 <p><a href="<?= h(url('import.php')) ?>">← Import</a></p>
 <h1>Ryttere: bulk-backfill</h1>

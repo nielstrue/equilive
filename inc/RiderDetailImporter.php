@@ -33,12 +33,53 @@ class RiderDetailImporter
         $this->db = $db;
     }
 
-    /** @return array<int,array{id:int,drf_rider_id:string,navn:string}> */
+    /**
+     * Ventende ryttere, prioriteret saa dem der er mest "aktuelle" at have
+     * DRF-licensdata for hentes foerst: (1) B-stævner med spring, (2)
+     * C-stævner med spring, (3) resten - og indenfor hver gruppe efter
+     * stævnets år, i raekkefoelgen sidste hele sæson, indeværende år,
+     * derefter aeldre aar (nyeste foerst). Et stævnes niveau er dets
+     * SAMLEDE top-niveau (shows.top_code), ikke den enkelte klasses.
+     * En rytter der optraeder i flere stævner faar sin bedste (laveste)
+     * prioritetsscore.
+     *
+     * @return array<int,array{id:int,drf_rider_id:string,navn:string}>
+     */
     private function pending(?int $limit, bool $force): array
     {
-        $sql = 'SELECT id, drf_rider_id, navn FROM riders'
-             . ($force ? '' : ' WHERE detail_harvested_at IS NULL')
-             . ' ORDER BY id'
+        $currentYear = (int)date('Y');
+        $prevYear    = $currentYear - 1;
+
+        $sql = "
+            SELECT r.id, r.drf_rider_id, r.navn
+            FROM riders r
+            LEFT JOIN (
+                SELECT cr.rider_id, MIN(sp.prio) AS prio
+                FROM class_riders cr
+                JOIN classes c ON c.id = cr.class_id
+                JOIN (
+                    SELECT s.id,
+                           (CASE
+                               WHEN s.top_code = 'B' AND js.show_id IS NOT NULL THEN 0
+                               WHEN s.top_code = 'C' AND js.show_id IS NOT NULL THEN 1
+                               ELSE 2
+                           END) * 100000
+                           +
+                           (CASE
+                               WHEN s.aar = $prevYear    THEN 0
+                               WHEN s.aar = $currentYear THEN 1
+                               ELSE 9999 - COALESCE(s.aar, 0)
+                           END) AS prio
+                    FROM shows s
+                    LEFT JOIN (SELECT DISTINCT show_id FROM classes WHERE disciplin = 'show_jumping') js
+                           ON js.show_id = s.id
+                    WHERE s.status = 'aktiv'
+                ) sp ON sp.id = c.show_id
+                GROUP BY cr.rider_id
+            ) rp ON rp.rider_id = r.id
+        "
+             . ($force ? '' : 'WHERE r.detail_harvested_at IS NULL')
+             . ' ORDER BY COALESCE(rp.prio, 999999999) ASC, r.id ASC'
              . ($limit !== null ? ' LIMIT ' . (int)$limit : '');
         return $this->db->all($sql);
     }

@@ -53,14 +53,15 @@ $periodEnd   = $d['period_end']   ? (int)substr($d['period_end'], 0, 4) : null;
 
 <?php if ($perYear): ?>
 <h2>Stævner pr. år</h2>
-<table class="data" style="max-width:420px">
-    <thead><tr><th>År</th><th class="r">Stævner</th><th class="r">Klasser</th></tr></thead>
+<table class="data" style="max-width:520px">
+    <thead><tr><th>År</th><th class="r">Stævner</th><th class="r">Klasser</th><th class="r">Starter</th></tr></thead>
     <tbody>
     <?php foreach ($perYear as $py): ?>
         <tr>
             <td><a href="<?= h(url('shows.php?aar=' . (int)$py['aar'])) ?>"><?= (int)$py['aar'] ?></a></td>
             <td class="r"><?= number_format((int)$py['staevner'], 0, ',', '.') ?></td>
             <td class="r"><?= number_format((int)$py['klasser'], 0, ',', '.') ?></td>
+            <td class="r"><?= number_format((int)$py['starter'], 0, ',', '.') ?></td>
         </tr>
     <?php endforeach; ?>
     </tbody>
