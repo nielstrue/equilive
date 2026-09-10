@@ -166,6 +166,18 @@ function require_login(): void {
         exit;
     }
 
+    // Session-timeout ved inaktivitet - logger automatisk ud efter
+    // SESSION_IDLE_MINUTES uden aktivitet, uanset hvor længe browserfanen har
+    // stået åben (cookien i sig selv udløber først ved browser-luk, se
+    // session_set_cookie_params() ovenfor).
+    if (isset($_SESSION['last_activity']) && (time() - $_SESSION['last_activity']) > SESSION_IDLE_MINUTES * 60) {
+        $_SESSION = [];
+        session_destroy();
+        header('Location: ' . url('login.php') . '?timeout=1');
+        exit;
+    }
+    $_SESSION['last_activity'] = time();
+
     $row = db()->one(
         'SELECT u.role, u.is_active, COALESCE(s.must_change_password, 0) AS must_change_password
          FROM users u
@@ -204,6 +216,88 @@ function require_permission(string $permission): void {
 /** Kræver admin-rollen (fx til import af data) - viser "adgang nægtet" ellers. */
 function require_admin(): void {
     require_permission('ADMIN_ACCESS');
+}
+
+// ---------------- Login-sikkerhed: rate limiting, konto-lockout, session-timeout ----------------
+
+const LOGIN_IP_WINDOW_MINUTES    = 15; // tidsvindue for IP-rate-limiting
+const LOGIN_IP_MAX_ATTEMPTS      = 20; // maks. loginforsøg fra samme IP (alle emails) i vinduet
+const LOGIN_ACCOUNT_MAX_FAILED   = 5;  // maks. forkerte forsøg i træk for én konto før lockout
+const LOGIN_ACCOUNT_LOCK_MINUTES = 15; // hvor længe en konto er låst efter lockout
+const SESSION_IDLE_MINUTES       = 30; // session logges automatisk ud efter så mange minutters inaktivitet
+
+/** Klientens IP-adresse (til rate limiting). REMOTE_ADDR er den eneste kilde
+ *  vi kan stole på uden en kendt/betroet proxy foran appen (en X-Forwarded-For
+ *  header kan forfalskes af klienten selv). */
+function client_ip(): string {
+    return $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
+}
+
+/** Har denne IP lavet for mange loginforsøg for nyligt? Tælles uafhængigt af
+ *  om email/kodeord var korrekt, og på tværs af emails - beskytter mod brute
+ *  force/credential stuffing fordelt over mange konti fra samme afsender. */
+function login_ip_rate_limited(string $ip): bool {
+    $count = (int)db()->scalar(
+        'SELECT COUNT(*) FROM login_attempts WHERE ip = ? AND created_at > NOW() - INTERVAL ' . LOGIN_IP_WINDOW_MINUTES . ' MINUTE',
+        [$ip]
+    );
+    return $count >= LOGIN_IP_MAX_ATTEMPTS;
+}
+
+/** Logger ét loginforsøg (til IP-rate-limiting ovenfor) - kaldes for både
+ *  vellykkede og forkerte forsøg. */
+function log_login_attempt(string $ip, string $email, bool $success): void {
+    db()->run(
+        'INSERT INTO login_attempts (ip, email, success) VALUES (?, ?, ?)',
+        [$ip, $email !== '' ? $email : null, $success ? 1 : 0]
+    );
+}
+
+/** Er kontoen p.t. låst pga. for mange forkerte forsøg i træk? Returnerer
+ *  tidspunktet låsen slutter, eller null hvis kontoen ikke er låst. */
+function account_locked_until(int $userId): ?string {
+    $row = db()->one(
+        'SELECT locked_until FROM equilive_user_state WHERE user_id = ? AND locked_until > NOW()',
+        [$userId]
+    );
+    return $row['locked_until'] ?? null;
+}
+
+/** Registrerer et forkert loginforsøg for kontoen - låser den i
+ *  LOGIN_ACCOUNT_LOCK_MINUTES minutter, naar LOGIN_ACCOUNT_MAX_FAILED
+ *  forkerte forsøg i træk er naaet. */
+function register_failed_login(int $userId): void {
+    ensure_equilive_user_state($userId);
+    db()->run(
+        'UPDATE equilive_user_state
+         SET failed_login_count = failed_login_count + 1,
+             locked_until = IF(failed_login_count + 1 >= ?, NOW() + INTERVAL ? MINUTE, locked_until)
+         WHERE user_id = ?',
+        [LOGIN_ACCOUNT_MAX_FAILED, LOGIN_ACCOUNT_LOCK_MINUTES, $userId]
+    );
+}
+
+/** Nulstiller forkerte forsøg/lockout for kontoen - kaldes ved et vellykket login. */
+function reset_failed_login(int $userId): void {
+    db()->run('UPDATE equilive_user_state SET failed_login_count = 0, locked_until = NULL WHERE user_id = ?', [$userId]);
+}
+
+/** Færdiggør et login (sætter den fulde session) - fælles for login.php (uden MFA)
+ *  og mfa_verify.php (efter en gyldig TOTP-/genoprettelses-/email-kode). Kaldes
+ *  KUN når email+kodeord (og evt. MFA) allerede er bekræftet. */
+function complete_login(array $user): void {
+    ensure_equilive_user_state((int)$user['id']);
+    reset_failed_login((int)$user['id']);
+    db()->run('UPDATE equilive_user_state SET last_login_at = NOW(), login_count = login_count + 1 WHERE user_id = ?', [$user['id']]);
+    session_regenerate_id(true);
+    $_SESSION['user'] = [
+        'id'    => (int)$user['id'],
+        'name'  => $user['name'],
+        'email' => $user['email'],
+        'role'  => $user['role'],
+    ];
+    $_SESSION['last_activity'] = time();
+    unset($_SESSION['mfa_pending']);
 }
 
 /** Kodeordspolitik: mindst 8 tegn, mindst ét stort bogstav, mindst ét tal.
@@ -293,4 +387,14 @@ function url(string $path = ''): string {
 /** Escape til HTML-output. */
 function h($v): string {
     return htmlspecialchars((string)$v, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+}
+
+/** Maskerer en email til visning (fx "j***@example.com") - bruges når man skal
+ *  vise HVOR en engangskode er sendt hen, uden at afsløre hele adressen. */
+function mask_email(string $email): string {
+    $at = strpos($email, '@');
+    if ($at === false || $at === 0) {
+        return $email;
+    }
+    return substr($email, 0, 1) . str_repeat('*', max($at - 1, 1)) . substr($email, $at);
 }

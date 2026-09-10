@@ -88,4 +88,11 @@ return [
     // fejlsøgning (uafhaengig af 'debug' herover, som ogsaa viser PHP-fejl i browseren).
     // Husk at saette den tilbage til false igen bagefter.
     'mail_debug' => false,
+
+    // Krypteringsnøgle til TOTP-hemmeligheder (to-faktor login, se inc/Mfa.php).
+    // Generér én unik værdi pr. installation med:
+    //   php -r "echo sodium_bin2base64(random_bytes(SODIUM_CRYPTO_SECRETBOX_KEYBYTES), SODIUM_BASE64_VARIANT_ORIGINAL), PHP_EOL;"
+    // Skift ALDRIG denne værdi når først nogen har aktiveret to-faktor login -
+    // så kan deres gemte hemmelighed ikke længere dekrypteres, og de låses ude.
+    'mfa_encryption_key' => 'RET_MIG_TIL_EN_GENERERET_SODIUM_NOEGLE',
 ];

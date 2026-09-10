@@ -17,19 +17,21 @@ class Stats
     /**
      * Nøgletal til forsiden. Stævner med status = 'udelukket' (se
      * showsOverview()/show.php) tælles ikke med - hverken selve stævnet,
-     * dets klasser, tildelinger eller ryttere.
+     * dets klasser, tildelinger eller ryttere. score_summary-klasser (ikke
+     * en rigtig klasse, se Importer.php) tælles heller aldrig med.
      */
     public function dashboard(): array
     {
         return [
             'shows'     => (int)$this->db->scalar("SELECT COUNT(*) FROM shows WHERE status = 'aktiv'"),
             'classes'   => (int)$this->db->scalar(
-                "SELECT COUNT(*) FROM classes c JOIN shows s ON s.id = c.show_id WHERE s.status = 'aktiv'"
+                "SELECT COUNT(*) FROM classes c JOIN shows s ON s.id = c.show_id
+                 WHERE s.status = 'aktiv' AND (c.disciplin IS NULL OR c.disciplin <> 'score_summary')"
             ),
             'officials' => (int)$this->db->scalar("SELECT COUNT(*) FROM officials WHERE status = 'aktiv'"),
             'assign'    => (int)$this->db->scalar(
                 "SELECT COUNT(*) FROM assignments a
-                 JOIN classes c ON c.id = a.class_id
+                 JOIN classes c ON c.id = a.class_id AND (c.disciplin IS NULL OR c.disciplin <> 'score_summary')
                  JOIN shows   s ON s.id = c.show_id
                  WHERE s.status = 'aktiv'"
             ),
@@ -42,7 +44,8 @@ class Stats
             ),
             'ryttere'   => (int)$this->db->scalar(
                 "SELECT COALESCE(SUM(c.starter),0) FROM classes c
-                 JOIN shows s ON s.id = c.show_id WHERE s.status = 'aktiv'"
+                 JOIN shows s ON s.id = c.show_id
+                 WHERE s.status = 'aktiv' AND (c.disciplin IS NULL OR c.disciplin <> 'score_summary')"
             ),
             'period_start' => $this->db->scalar("SELECT MIN(dato) FROM shows WHERE status = 'aktiv'"),
             'period_end'   => $this->db->scalar("SELECT MAX(dato) FROM shows WHERE status = 'aktiv'"),
@@ -284,10 +287,11 @@ class Stats
         }
 
         // Officials der HAR mindst én tildeling der matcher rolle/år-filteret - resten mangler den.
+        // score_summary er ikke en rigtig klasse (se Importer.php) og taeller derfor ikke som aktivitet.
         $withActivity = $this->db->all(
             "SELECT DISTINCT a.official_id
              FROM assignments a
-             JOIN classes c ON c.id = a.class_id
+             JOIN classes c ON c.id = a.class_id AND (c.disciplin IS NULL OR c.disciplin <> 'score_summary')
              JOIN shows s   ON s.id = c.show_id AND s.status = 'aktiv' $yearCond
              WHERE a.official_id IN ($idPh) $roleCond",
             array_merge($yearParams, $ids, $roleParams)
@@ -298,7 +302,7 @@ class Stats
         $lastActivityRows = $this->db->all(
             "SELECT a.official_id, MAX(s.dato) AS sidste_opgave, COUNT(*) AS antal_opgaver
              FROM assignments a
-             JOIN classes c ON c.id = a.class_id
+             JOIN classes c ON c.id = a.class_id AND (c.disciplin IS NULL OR c.disciplin <> 'score_summary')
              JOIN shows s   ON s.id = c.show_id AND s.status = 'aktiv'
              WHERE a.official_id IN ($idPh)
              GROUP BY a.official_id",
@@ -322,6 +326,125 @@ class Stats
                 'typer'         => $o['typer'],
                 'sidste_opgave' => $last['sidste_opgave'] ?? null,
                 'antal_opgaver' => $last ? (int)$last['antal_opgaver'] : 0,
+            ];
+        }
+        return $rows;
+    }
+
+    /**
+     * Officials der matcher de samme type/distrikt/status-filtre som
+     * officialsOverview(), men som IKKE har nogen tildeling ved et stævne i
+     * de valgte år (eller nogensinde, hvis intet årstal er valgt). Bruges
+     * som en "hvem mangler"-liste under officials.php, når fx et type-filter
+     * (springdommere/banedesignere) i sig selv normalt allerede indsnævrer
+     * officials-listen til én disciplin.
+     *
+     * Bevidst UDEN disciplin-filter (i modsætning til officialsOverview()) -
+     * typen (drf_officials.type) er ofte allerede disciplin-specifik (fx
+     * "Springning - Banedesigner - D"), og formålet her er at vise hvem der
+     * slet ikke har virket ved noget stævne, ikke kun i netop den disciplin.
+     *
+     * @param array<int,string>|string $year
+     * @param array<int,string>|string $distrikt
+     * @param array<int,string>|string $type
+     * @param array<int,string>|string $status Tom = alle statusser.
+     */
+    public function officialsWithoutActivity($year = '', $distrikt = '', $type = '', $status = ''): array
+    {
+        $years      = array_values(array_filter((array)$year, fn($v) => $v !== ''));
+        $distrikter = array_values(array_filter((array)$distrikt, fn($v) => $v !== ''));
+        $typer      = array_values(array_filter((array)$type, fn($v) => $v !== ''));
+        $statuses   = array_values(array_filter((array)$status, fn($v) => $v !== ''));
+
+        $where = [];
+        $params = [];
+        if ($statuses) {
+            $placeholders = implode(',', array_fill(0, count($statuses), '?'));
+            $where[] = "o.status IN ($placeholders)";
+            array_push($params, ...$statuses);
+        }
+        if ($distrikter) {
+            $placeholders = implode(',', array_fill(0, count($distrikter), '?'));
+            $where[] = "o.id IN (SELECT official_id FROM drf_officials WHERE distrikt IN ($placeholders))";
+            array_push($params, ...$distrikter);
+        }
+        if ($typer) {
+            $placeholders = implode(',', array_fill(0, count($typer), '?'));
+            $where[] = "o.id IN (SELECT official_id FROM drf_officials WHERE type IN ($placeholders))";
+            array_push($params, ...$typer);
+        }
+        $whereSql = $where ? ('WHERE ' . implode(' AND ', $where)) : '';
+
+        $officials = $this->db->all(
+            "SELECT o.id, o.navn, o.status,
+                    (SELECT GROUP_CONCAT(DISTINCT d.type ORDER BY d.type SEPARATOR ', ')
+                        FROM drf_officials d WHERE d.official_id = o.id) AS typer,
+                    (SELECT GROUP_CONCAT(DISTINCT d.distrikt ORDER BY d.distrikt SEPARATOR ', ')
+                        FROM drf_officials d WHERE d.official_id = o.id AND d.distrikt IS NOT NULL AND d.distrikt <> '') AS distrikter
+             FROM officials o
+             $whereSql
+             ORDER BY o.navn",
+            $params
+        );
+        if (!$officials) {
+            return [];
+        }
+
+        $ids  = array_column($officials, 'id');
+        $idPh = implode(',', array_fill(0, count($ids), '?'));
+
+        $yearCond = '';
+        $yearParams = [];
+        if ($years) {
+            $placeholders = implode(',', array_fill(0, count($years), '?'));
+            $yearCond = "AND s.aar IN ($placeholders)";
+            $yearParams = $years;
+        }
+
+        // Officials der HAR mindst én tildeling i perioden - resten mangler den.
+        // score_summary er ikke en rigtig klasse (se Importer.php) og taeller derfor ikke som aktivitet.
+        $withActivity = $this->db->all(
+            "SELECT DISTINCT a.official_id
+             FROM assignments a
+             JOIN classes c ON c.id = a.class_id AND (c.disciplin IS NULL OR c.disciplin <> 'score_summary')
+             JOIN shows s   ON s.id = c.show_id AND s.status = 'aktiv' $yearCond
+             WHERE a.official_id IN ($idPh)",
+            array_merge($yearParams, $ids)
+        );
+        $hasActivity = array_flip(array_map('intval', array_column($withActivity, 'official_id')));
+
+        // Sidste opgave + antal stævner/klasser i alt (uafhængigt af årsfilteret), til kontekst.
+        $lastActivityRows = $this->db->all(
+            "SELECT a.official_id, MAX(s.dato) AS sidste_opgave,
+                    COUNT(DISTINCT c.show_id)  AS antal_staevner,
+                    COUNT(DISTINCT a.class_id) AS antal_klasser
+             FROM assignments a
+             JOIN classes c ON c.id = a.class_id AND (c.disciplin IS NULL OR c.disciplin <> 'score_summary')
+             JOIN shows s   ON s.id = c.show_id AND s.status = 'aktiv'
+             WHERE a.official_id IN ($idPh)
+             GROUP BY a.official_id",
+            $ids
+        );
+        $lastByOfficial = [];
+        foreach ($lastActivityRows as $r) {
+            $lastByOfficial[(int)$r['official_id']] = $r;
+        }
+
+        $rows = [];
+        foreach ($officials as $o) {
+            if (isset($hasActivity[(int)$o['id']])) {
+                continue;
+            }
+            $last = $lastByOfficial[(int)$o['id']] ?? null;
+            $rows[] = [
+                'id'            => $o['id'],
+                'navn'          => $o['navn'],
+                'status'        => $o['status'],
+                'typer'         => $o['typer'],
+                'distrikter'    => $o['distrikter'],
+                'sidste_opgave' => $last['sidste_opgave'] ?? null,
+                'antal_staevner' => $last ? (int)$last['antal_staevner'] : 0,
+                'antal_klasser'  => $last ? (int)$last['antal_klasser'] : 0,
             ];
         }
         return $rows;
@@ -907,6 +1030,26 @@ class Stats
         return $this->db->one('SELECT * FROM officials WHERE id = ?', [$id]);
     }
 
+    /**
+     * Antaget startdato for en official: datoen for det tidligste stævne
+     * hvor officialen har en tildeling (rolle) - dvs. første gang de
+     * optræder i data, ikke en officielt registreret startdato. Udelukkede
+     * stævner (status='udelukket') tælles ikke med, ligesom øvrige
+     * statistikker i appen. score_summary er ikke en rigtig klasse og
+     * indgår derfor heller ikke (se Importer.php).
+     */
+    public function officialFirstSeen(int $id): ?string
+    {
+        return $this->db->scalar(
+            "SELECT MIN(s.dato)
+             FROM assignments a
+             JOIN classes c ON c.id = a.class_id AND (c.disciplin IS NULL OR c.disciplin <> 'score_summary')
+             JOIN shows   s ON s.id = c.show_id AND s.status = 'aktiv'
+             WHERE a.official_id = ?",
+            [$id]
+        ) ?: null;
+    }
+
     /** Tidligere navne (aliaser) for én official, fx efter en fletning. */
     public function officialAliases(int $id): array
     {
@@ -933,10 +1076,11 @@ class Stats
         }
 
         // shows joines altid ind for at udelukke stævner med status = 'udelukket'.
+        // score_summary er ikke en rigtig klasse (se Importer.php) og taeller derfor ikke med.
         return $this->db->all(
             "SELECT a.rolle, COUNT(*) AS antal
              FROM assignments a
-             JOIN classes c ON c.id = a.class_id
+             JOIN classes c ON c.id = a.class_id AND (c.disciplin IS NULL OR c.disciplin <> 'score_summary')
              JOIN shows   s ON s.id = c.show_id AND s.status = 'aktiv' $yearCond
              WHERE a.official_id = ?
              GROUP BY a.rolle ORDER BY antal DESC, a.rolle",
@@ -974,7 +1118,8 @@ class Stats
                     GROUP_CONCAT(DISTINCT a.rolle ORDER BY a.rolle SEPARATOR ', ') AS roller,
                     COALESCE(rid.ryttere, 0) AS ryttere,
                     (SELECT GROUP_CONCAT(DISTINCT c3.disciplin ORDER BY c3.disciplin SEPARATOR ' / ')
-                        FROM classes c3 WHERE c3.show_id = s.id AND c3.disciplin IS NOT NULL AND c3.disciplin <> '') AS discipliner
+                        FROM classes c3 WHERE c3.show_id = s.id AND c3.disciplin IS NOT NULL AND c3.disciplin <> ''
+                            AND c3.disciplin <> 'score_summary') AS discipliner
              FROM assignments a
              JOIN classes c ON c.id = a.class_id AND (c.disciplin IS NULL OR c.disciplin <> 'score_summary')
              JOIN shows   s ON s.id = c.show_id $yearCond
@@ -1061,13 +1206,17 @@ class Stats
             "SELECT s.id, s.prop, s.dato, s.aar, s.disciplin, s.top_code, s.has_lower, s.prop_unknown,
                     s.status, s.status_note,
                     cl.navn AS klub, cl.forkort,
-                    (SELECT COUNT(*) FROM classes c WHERE c.show_id = s.id) AS klasser,
-                    (SELECT COALESCE(SUM(starter),0) FROM classes c WHERE c.show_id = s.id) AS ryttere,
+                    (SELECT COUNT(*) FROM classes c WHERE c.show_id = s.id
+                        AND (c.disciplin IS NULL OR c.disciplin <> 'score_summary')) AS klasser,
+                    (SELECT COALESCE(SUM(starter),0) FROM classes c WHERE c.show_id = s.id
+                        AND (c.disciplin IS NULL OR c.disciplin <> 'score_summary')) AS ryttere,
                     (SELECT COUNT(DISTINCT a.official_id)
                         FROM assignments a JOIN classes c ON c.id = a.class_id
+                            AND (c.disciplin IS NULL OR c.disciplin <> 'score_summary')
                         WHERE c.show_id = s.id) AS officials,
                     (SELECT GROUP_CONCAT(DISTINCT c.disciplin ORDER BY c.disciplin SEPARATOR ' / ')
-                        FROM classes c WHERE c.show_id = s.id AND c.disciplin IS NOT NULL AND c.disciplin <> '') AS discipliner
+                        FROM classes c WHERE c.show_id = s.id AND c.disciplin IS NOT NULL AND c.disciplin <> ''
+                            AND c.disciplin <> 'score_summary') AS discipliner
              FROM shows s
              LEFT JOIN clubs cl ON cl.id = s.club_id
              $w
@@ -1260,10 +1409,13 @@ class Stats
 
         return $this->db->all(
             "SELECT s.id, s.prop, s.dato, s.aar, s.disciplin, s.top_code, s.has_lower, s.prop_unknown,
-                    (SELECT COUNT(*) FROM classes c WHERE c.show_id = s.id) AS klasser,
-                    (SELECT COALESCE(SUM(starter),0) FROM classes c WHERE c.show_id = s.id) AS ryttere,
+                    (SELECT COUNT(*) FROM classes c WHERE c.show_id = s.id
+                        AND (c.disciplin IS NULL OR c.disciplin <> 'score_summary')) AS klasser,
+                    (SELECT COALESCE(SUM(starter),0) FROM classes c WHERE c.show_id = s.id
+                        AND (c.disciplin IS NULL OR c.disciplin <> 'score_summary')) AS ryttere,
                     (SELECT COUNT(DISTINCT a.official_id)
                         FROM assignments a JOIN classes c ON c.id = a.class_id
+                            AND (c.disciplin IS NULL OR c.disciplin <> 'score_summary')
                         WHERE c.show_id = s.id) AS officials
              FROM shows s
              WHERE s.club_id = ? $yearWhere
@@ -1325,15 +1477,18 @@ class Stats
         return array_map(fn($r) => (int)$r['aar'], $rows);
     }
 
-    /** Antal staevner pr. aar (til forsiden). Udelukkede stævner tæller ikke med. */
+    /** Antal staevner pr. aar (til forsiden). Udelukkede stævner og score_summary-
+     *  klasser (ikke en rigtig klasse, se Importer.php) tæller ikke med. */
     public function showsPerYear(): array
     {
         return $this->db->all(
             "SELECT aar, COUNT(*) AS staevner,
                     (SELECT COUNT(*) FROM classes c JOIN shows s2 ON s2.id = c.show_id
-                        WHERE s2.aar = s.aar AND s2.status = 'aktiv') AS klasser,
+                        WHERE s2.aar = s.aar AND s2.status = 'aktiv'
+                            AND (c.disciplin IS NULL OR c.disciplin <> 'score_summary')) AS klasser,
                     (SELECT COALESCE(SUM(c.starter), 0) FROM classes c JOIN shows s2 ON s2.id = c.show_id
-                        WHERE s2.aar = s.aar AND s2.status = 'aktiv') AS starter
+                        WHERE s2.aar = s.aar AND s2.status = 'aktiv'
+                            AND (c.disciplin IS NULL OR c.disciplin <> 'score_summary')) AS starter
              FROM shows s
              WHERE aar IS NOT NULL AND s.status = 'aktiv'
              GROUP BY aar ORDER BY aar DESC"
@@ -1509,7 +1664,7 @@ class Stats
                     COUNT(a.id)               AS roller
              FROM officials o
              JOIN assignments a ON a.official_id = o.id
-             JOIN classes c     ON c.id = a.class_id
+             JOIN classes c     ON c.id = a.class_id AND (c.disciplin IS NULL OR c.disciplin <> 'score_summary')
              JOIN shows s       ON s.id = c.show_id AND s.status = 'aktiv'
              WHERE o.drf_listed = 0
              GROUP BY o.id, o.navn

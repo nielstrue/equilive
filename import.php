@@ -38,11 +38,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'drf')
     }
 } elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'csv_url') {
     try {
-        $url = $GLOBALS['config']['csv_url'] ?? '';
-        if ($url === '') {
+        $currentYear = (int)date('Y');
+        $csvYear     = (int)($_POST['csv_year'] ?? $currentYear);
+        if ($csvYear < 2019 || $csvYear > $currentYear) {
+            throw new RuntimeException('Ugyldigt årstal valgt.');
+        }
+
+        $urlTemplate    = $GLOBALS['config']['csv_url'] ?? '';
+        $targetTemplate = $GLOBALS['config']['default_csv'] ?? (__DIR__ . '/data/officials_' . $currentYear . '.csv');
+        if ($urlTemplate === '') {
             throw new RuntimeException('Ingen csv_url sat i config.php.');
         }
-        $target   = $GLOBALS['config']['default_csv'] ?? (__DIR__ . '/data/officials_2026.csv');
+        // csv_url/default_csv indeholder aarstallet for indeværende sæson (fx
+        // "officials_2026.csv") - erstat det med det valgte aarstal, saa
+        // samme opsætning bruges til at hente tidligere aars filer.
+        $url    = preg_replace('/\d{4}(?=\.csv$)/', (string)$csvYear, $urlTemplate);
+        $target = preg_replace('/\d{4}(?=\.csv$)/', (string)$csvYear, $targetTemplate);
+
         $importer = new Importer(db());
         $result   = $importer->importFromUrl($url, $target);
     } catch (Throwable $e) {
@@ -128,11 +140,20 @@ render_header('Import', 'import');
         <h2>Hent live fra equilive.dk</h2>
         <form method="post"><?= csrf_field() ?>
             <input type="hidden" name="action" value="csv_url">
-            <p><button class="btn" type="submit">Hent og indlæs nyeste CSV</button></p>
+            <p>
+                <label for="csv_year">Årstal</label>
+                <select name="csv_year" id="csv_year">
+                    <?php for ($y = (int)date('Y'); $y >= 2019; $y--): ?>
+                        <option value="<?= $y ?>"<?= $y === (int)date('Y') ? ' selected' : '' ?>><?= $y ?></option>
+                    <?php endfor; ?>
+                </select>
+            </p>
+            <p><button class="btn" type="submit">Hent og indlæs CSV</button></p>
         </form>
-        <p class="muted">Henter <code><?= h($GLOBALS['config']['csv_url'] ?? '') ?></code> og gemmer den som
-            <code><?= h($defaultPath) ?></code>, klar til både denne knap og planlagt kørsel via
-            <code>cli/import.php</code>. Kræver at serveren har adgang til internettet (curl).</p>
+        <p class="muted">Henter <code>https://api.equilive.dk/DRF/officials_<em>årstal</em>.csv</code> og gemmer den som
+            <code>data/officials_<em>årstal</em>.csv</code>, klar til både denne knap og planlagt kørsel via
+            <code>cli/import.php</code> (som altid bruger indeværende år, <?= (int)date('Y') ?>).
+            Kræver at serveren har adgang til internettet (curl).</p>
     </section>
     <section>
         <h2>Upload fil</h2>

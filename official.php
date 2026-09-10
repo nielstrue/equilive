@@ -33,6 +33,7 @@ $shows  = $stats->officialShows($id, $selectedAar);
 $drfRoles = $stats->officialDrfRoles($id);
 $feiFunctions = $stats->officialFeiFunctions($id);
 $aliases  = $stats->officialAliases($id);
+$firstSeen = $off['drf_listed'] ? $stats->officialFirstSeen($id) : null;
 
 $totRyttere = 0;
 foreach ($shows as $s) { $totRyttere += (int)$s['ryttere']; }
@@ -71,9 +72,18 @@ back_link(url('officials.php'), 'Alle officials');
 </div>
 
 <section class="drf-box">
-    <h2>DRF officials-liste
-        <?= $off['drf_listed'] ? '<span class="badge badge-drf">✓ på listen</span>' : '<span class="badge badge-muted">ikke fundet</span>' ?>
-    </h2>
+    <div class="drf-box-head">
+        <h2>DRF officials-liste
+            <?= $off['drf_listed'] ? '<span class="badge badge-drf">✓ på listen</span>' : '<span class="badge badge-muted">ikke fundet</span>' ?>
+        </h2>
+        <img src="<?= h(asset_version('assets/DRF_2017_logo_guld_ny.png')) ?>" alt="DRF" class="drf-logo">
+    </div>
+    <?php if ($firstSeen): ?>
+        <p class="muted">Antaget startdato: <?= dk_date($firstSeen) ?> (første stævne med en rolle i data).
+            <?php if ((int)substr($firstSeen, 0, 4) === 2019): ?>
+                Data findes kun tilbage til 2019 - officialen kan have virket som official tidligere.
+            <?php endif; ?></p>
+    <?php endif; ?>
     <?php if ($drfRoles): ?>
         <table class="data">
             <thead><tr><th>Kategori</th><th>Type</th><th>Distrikt</th></tr></thead>
@@ -83,16 +93,20 @@ back_link(url('officials.php'), 'Alle officials');
             <?php endforeach; ?>
             </tbody>
         </table>
-    <?php else: ?>
+    <?php elseif (has_permission('ADMIN_ACCESS')): ?>
         <p class="muted">Denne official er ikke matchet på den høstede DRF-liste.
             Det kan skyldes stavning/navneforskelle – se <a href="<?= h(url('drf.php')) ?>">DRF-afstemningen</a>.</p>
+    <?php else: ?>
+        <p class="muted">Denne official er ikke matchet på den høstede DRF-liste.</p>
     <?php endif; ?>
 </section>
 
+<?php if ($off['fei_listed']): ?>
 <section class="drf-box">
-    <h2>FEI officials-liste
-        <?= $off['fei_listed'] ? '<span class="badge badge-drf">✓ på listen</span>' : '<span class="badge badge-muted">ikke fundet</span>' ?>
-    </h2>
+    <div class="drf-box-head">
+        <h2>FEI officials-liste <span class="badge badge-drf">✓ på listen</span></h2>
+        <img src="<?= h(asset_version('assets/fei.png')) ?>" alt="FEI" class="drf-logo">
+    </div>
     <?php if ($feiFunctions): ?>
         <?php $feiStatusLabel = ['active' => 'Aktiv', 'cannot_officiate' => 'Kan ikke officiere', 'assistant_only' => 'Kun assistent']; ?>
         <table class="data">
@@ -108,13 +122,9 @@ back_link(url('officials.php'), 'Alle officials');
             <?php endforeach; ?>
             </tbody>
         </table>
-    <?php else: ?>
-        <p class="muted">Denne official er ikke matchet på den høstede FEI-liste.
-            <?php if (has_permission('ADMIN_ACCESS')): ?>
-                Det kan skyldes stavning/navneforskelle – se <a href="<?= h(url('fei.php')) ?>">FEI-afstemningen</a>.
-            <?php endif; ?></p>
     <?php endif; ?>
 </section>
+<?php endif; ?>
 
 <div class="grid2">
     <section>

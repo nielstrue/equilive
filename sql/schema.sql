@@ -401,7 +401,53 @@ CREATE TABLE IF NOT EXISTS equilive_user_state (
     must_change_password  TINYINT(1) NOT NULL DEFAULT 0,
     last_login_at         DATETIME NULL,
     login_count           INT UNSIGNED NOT NULL DEFAULT 0,
+    failed_login_count    INT UNSIGNED NOT NULL DEFAULT 0, -- forkerte forsøg i træk, se register_failed_login()
+    locked_until          DATETIME NULL,                   -- kontoen er låst indtil dette tidspunkt (NULL = ikke låst)
+    mfa_enabled           TINYINT(1) NOT NULL DEFAULT 0,    -- to-faktor login (TOTP) aktiveret, se inc/Mfa.php
+    mfa_secret_encrypted  TEXT NULL,                        -- TOTP-hemmelighed, krypteret med config['mfa_encryption_key']
+    mfa_enrolled_at       DATETIME NULL,
+    mfa_last_totp_step    BIGINT UNSIGNED NULL,             -- sidst accepterede tidsskridt, forhindrer genbrug af en kode
     PRIMARY KEY (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Loginforsøg pr. IP (held og forkerte), til rate limiting på tværs af emails
+-- fra samme afsender - se login_ip_rate_limited() i inc/bootstrap.php.
+CREATE TABLE IF NOT EXISTS login_attempts (
+    id         INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    ip         VARCHAR(45)  NOT NULL,
+    email      VARCHAR(190) NULL,
+    success    TINYINT(1)   NOT NULL DEFAULT 0,
+    created_at DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    KEY idx_login_attempts_ip (ip, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Genoprettelseskoder til to-faktor login (bruges hvis telefonen med
+-- authenticator-appen er utilgængelig) - kun hashet, aldrig klartekst, og
+-- hver kode kan bruges én gang. Se Mfa::generateRecoveryCodes()/verifyRecoveryCode().
+CREATE TABLE IF NOT EXISTS equilive_mfa_recovery_codes (
+    id         INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    user_id    INT UNSIGNED NOT NULL,
+    code_hash  VARCHAR(255) NOT NULL,
+    used_at    DATETIME NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    KEY idx_mfa_recovery_user (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Engangskoder sendt pr. email (fallback til to-faktor login, hvis
+-- authenticator-appen ikke er tilgængelig) - kun hashet, tidsbegrænset og
+-- med et loft over antal forsøg. Se Mfa::sendEmailCode()/verifyEmailCode().
+CREATE TABLE IF NOT EXISTS equilive_mfa_email_codes (
+    id          INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    user_id     INT UNSIGNED NOT NULL,
+    code_hash   VARCHAR(255) NOT NULL,
+    expires_at  DATETIME NOT NULL,
+    attempts    SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+    consumed_at DATETIME NULL,
+    created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    KEY idx_mfa_email_user (user_id, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Rolle → rettighed (RBAC), redigerbar i GUI'et under "Brugere" → "Rolle-rettigheder".

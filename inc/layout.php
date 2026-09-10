@@ -42,13 +42,13 @@ function render_header(string $title, string $active = ''): void
     $nav = [
         ''          => 'Forside',
         'officials' => 'Officials',
-        'status_krav' => 'Opretholdelse af status',
-        'officials_uden_rolle' => 'Uden rolle',
         'clubs'     => 'Klubber',
         'shows'     => 'Stævner',
-        'drf'       => 'DRF-liste',
+        'officials_uden_rolle' => 'Uden rolle',
+        'status_krav' => 'Opretholdelse af status',
     ];
     if ($user && has_permission('ADMIN_ACCESS', $user)) {
+        $nav['drf'] = 'DRF-liste';
         $nav['fei'] = 'FEI-liste';
         $nav['roles'] = 'Roller';
         $nav['riders'] = 'Ryttere'; // TODO: flyt tilbage til alle roller når rytterfunktionen er færdigudviklet
@@ -86,6 +86,7 @@ function render_header(string $title, string $active = ''): void
             <span class="topbar-user">
                 <?= h($user['name']) ?> <span class="badge badge-muted"><?= h(role_label($user['role'])) ?></span>
                 · <a href="<?= h(url('skift_kodeord.php')) ?>">Skift kodeord</a>
+                · <a href="<?= h(url('mfa_setup.php')) ?>">To-faktor login</a>
                 · <a href="<?= h(url('logout.php')) ?>">Log ud</a>
             </span>
         <?php endif; ?>

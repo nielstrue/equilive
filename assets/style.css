@@ -9,7 +9,8 @@ a{color:var(--accent);text-decoration:none}
 a:hover{text-decoration:underline}
 
 .topbar{display:flex;align-items:center;gap:1.5rem;background:var(--brand);
-  color:#fff;padding:.7rem 1.2rem;flex-wrap:wrap}
+  color:#fff;padding:.7rem 1.2rem;flex-wrap:wrap;
+  position:sticky;top:0;z-index:100;box-shadow:0 1px 4px rgba(0,0,0,.15)}
 .topbar .brand{display:flex;align-items:center;gap:.55rem;color:#fff;font-weight:700;font-size:1.15rem}
 .topbar .brand svg{flex:none}
 
@@ -176,4 +177,7 @@ code{background:#eceff1;padding:.05rem .35rem;border-radius:4px;font-size:.9em}
 .badge-drf{background:#1f6f54;color:#fff}
 .drf-box{margin:1rem 0}
 .drf-box h2{margin-top:0}
+.drf-box-head{display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap}
+.drf-box-head h2{margin:0}
+.drf-logo{height:64px;width:auto;flex:none}
 h3{font-size:1rem;margin:.8rem 0 .5rem}

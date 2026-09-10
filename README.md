@@ -135,11 +135,16 @@ fra begge systemer.
 mysql -u root equilive < sql\migrate_add_user_roles.sql
 mysql -u root equilive < sql\migrate_add_user_management.sql
 mysql -u root equilive < sql\migrate_add_role_permissions.sql
+mysql -u root equilive < sql\migrate_add_login_security.sql
+mysql -u root equilive < sql\migrate_add_mfa.sql
 ```
 Første fil (findes fra før) tilføjer `users.role` og gør den ældste bruger
 til admin. Anden fil udvider rollerne til de fire ovenfor og opretter
 `equilive_user_state`. Tredje fil opretter og seeder
-`equilive_role_permissions`. Nye installationer får det hele automatisk fra
+`equilive_role_permissions`. Fjerde fil tilføjer rate limiting/konto-lockout-
+felterne på `equilive_user_state` og `login_attempts`. Femte fil tilføjer
+to-faktor login (kræver desuden `config['mfa_encryption_key']`, se
+`config.example.php`). Nye installationer får det hele automatisk fra
 `sql/schema.sql`.
 
 ### Opret/opdater en bruger fra kommandolinjen
@@ -175,6 +180,20 @@ og kodeordet skal skiftes ved næste login, ligesom ved oprettelse i GUI'et.
 - Alle scripts/stylesheets er samme-origin (`assets/`) - ingen ekstern
   CDN indlæses, så "Sub Resource Integrity mangler" og "cross-domain script
   inclusion" er ikke reelle fund her.
+- **Login-beskyttelse** (`inc/bootstrap.php`): rate limiting pr. IP (maks.
+  `LOGIN_IP_MAX_ATTEMPTS` forsøg pr. `LOGIN_IP_WINDOW_MINUTES` minutter, på
+  tværs af emails), konto-lockout efter `LOGIN_ACCOUNT_MAX_FAILED` forkerte
+  forsøg i træk (`LOGIN_ACCOUNT_LOCK_MINUTES` minutters lås), og automatisk
+  log-ud efter `SESSION_IDLE_MINUTES` minutters inaktivitet.
+- **To-faktor login (MFA)**: frivilligt pr. bruger, aktiveres under
+  "To-faktor login" i topbaren (`mfa_setup.php`). TOTP (RFC 6238, kompatibel
+  med Microsoft/Google Authenticator) som primær metode - se `inc/Totp.php`
+  (håndrullet, ingen Composer-afhængighed) og `inc/Mfa.php`. Hemmeligheden
+  krypteres med libsodium (`config['mfa_encryption_key']`) før den gemmes.
+  Mandatory genoprettelseskoder (vist én gang, kun hashet i databasen) og en
+  email-engangskode-fallback (via den eksisterende `Mailer`/SMTP-opsætning)
+  dækker tabt telefon/app. Samme rate-limiting/lockout som ovenfor gælder
+  også kode-forsøg på `mfa_verify.php`.
 
 ## Ugentlig import (automatisk)
 
@@ -380,6 +399,8 @@ equilive/
 ├─ logout.php           Log ud
 ├─ brugere.php          Brugeradministration (RBAC-roller, kodeord) – kræver USER_READ
 ├─ skift_kodeord.php    Skift/1. gangs-kodeord (styrke-indikator)
+├─ mfa_setup.php        Aktivér/deaktivér to-faktor login (TOTP), genoprettelseskoder
+├─ mfa_verify.php       2. login-trin når to-faktor login er aktiveret (kode/genopret./email)
 ├─ import.php           Upload + kør import (kræver ADMIN_ACCESS)
 ├─ officials.php        Officials-statistik (liste)
 ├─ official.php         Official – detalje
@@ -392,7 +413,9 @@ equilive/
 ├─ inc/                 Kerne: Database, Importer, Levels, Stats, layout, bootstrap,
 │                       DrfImporter (officials), DrfClubImporter (klubber),
 │                       ShowDetailImporter (klassedetaljer pr. stævne),
-│                       OfficialMerger (flet/omdøb), DrfOfficialLinker (knyt DRF-navn)
+│                       OfficialMerger (flet/omdøb), DrfOfficialLinker (knyt DRF-navn),
+│                       Totp (RFC 6238), Mfa (to-faktor login), Mailer (SMTP)
+├─ assets/vendor/qrcodejs/  Vendoret QR-generator (MIT, davidshimjs/qrcodejs) til mfa_setup.php
 ├─ cli/import.php              CLI-importer til planlagt kørsel
 ├─ cli/import_drf_clubs.php    CLI-høstning af DRF's klubliste (distrikt)
 ├─ cli/create_user.php         Opret/opdater login-bruger + rolle

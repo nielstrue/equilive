@@ -58,6 +58,47 @@ class Mailer
         }
     }
 
+    /** Sender en engangskode til to-faktor login (email-fallback, se inc/Mfa.php).
+     *  @return string|null Fejlbesked, eller null hvis mailen blev sendt. */
+    public static function sendMfaCode(string $email, string $navn, string $code): ?string
+    {
+        $cfg = $GLOBALS['config']['mail'] ?? null;
+        if (!$cfg || empty($cfg['host'])) {
+            return 'Mail er ikke sat op (mangler config["mail"] i config.php) - brug authenticator-appen eller en genoprettelseskode i stedet.';
+        }
+
+        $mail = new PHPMailer(true);
+        try {
+            if (!empty($GLOBALS['config']['mail_debug'])) {
+                $mail->SMTPDebug   = SMTP::DEBUG_SERVER;
+                $mail->Debugoutput = 'error_log';
+            }
+            $mail->CharSet = 'UTF-8';
+
+            $mail->isSMTP();
+            $mail->Host       = $cfg['host'];
+            $mail->SMTPAuth   = true;
+            $mail->Username   = $cfg['username'];
+            $mail->Password   = $cfg['password'];
+            $mail->SMTPSecure = $cfg['smtp_secure'] ?? PHPMailer::ENCRYPTION_STARTTLS;
+            $mail->Port       = (int)($cfg['port'] ?? 587);
+
+            $mail->setFrom($cfg['from_email'], $cfg['from_name'] ?? 'Equilive');
+            $mail->addAddress($email, $navn);
+
+            $mail->isHTML(false);
+            $mail->Subject = 'Din login-kode til Equilive';
+            $mail->Body    = "Hej $navn,\n\nDin engangskode til login er: $code\n\n"
+                . 'Koden udløber om ' . Mfa::EMAIL_CODE_TTL_MINUTES . " minutter.\n\n"
+                . "Har du ikke selv forsøgt at logge ind, kan du ignorere denne mail.";
+
+            $mail->send();
+            return null;
+        } catch (PHPMailerException $e) {
+            return 'Kunne ikke sende mail: ' . $mail->ErrorInfo;
+        }
+    }
+
     private static function accessMailBody(string $navn, string $email, string $kodeord): string
     {
         $appUrl = $GLOBALS['config']['app_url'] ?? url('/');

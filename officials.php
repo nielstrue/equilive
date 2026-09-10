@@ -14,6 +14,18 @@ $selectedStatus = isset($_GET['status']) ? array_map('strval', (array)$_GET['sta
 
 $stats       = new Stats(db());
 $rows        = $stats->officialsOverview($search, $sort, $selectedAar, $selectedDisc, '', $selectedDist, $selectedType, $selectedStatus);
+// "Ikke virket ved stævner" - samme distrikt/status-filtre som ovenfor, men
+// bevidst UDEN disciplin og søgning, se Stats::officialsWithoutActivity().
+// Én liste pr. valgt type (en official der matcher flere valgte typer optræder
+// på hver af dem) - uden typefilter vises i stedet én samlet liste.
+$missingGroups = [];
+if ($selectedType) {
+    foreach ($selectedType as $t) {
+        $missingGroups[$t] = $stats->officialsWithoutActivity($selectedAar, $selectedDist, [$t], $selectedStatus);
+    }
+} else {
+    $missingGroups[''] = $stats->officialsWithoutActivity($selectedAar, $selectedDist, '', $selectedStatus);
+}
 $years       = $stats->years();
 $distrikter  = $stats->drfDistrikter();
 // "organizer" (syntetisk kategori til roller der arrangerer/leder stævnet, ikke en
@@ -91,5 +103,38 @@ render_header('Officials', 'officials');
     <?php endif; ?>
     </tbody>
 </table>
+
+<h2>Officials der ikke har virket ved stævner</h2>
+<p class="muted">Officials der matcher distrikt- og status-filteret ovenfor<?= $selectedType ? ', opdelt pr. valgt type' : '' ?>,
+    men ingen tildeling har haft <?= $selectedAar ? 'i ' . h(implode(', ', $selectedAar)) : 'i stævnedata' ?>.
+    Disciplin- og søgefilteret indgår ikke her, da typen ofte i forvejen er disciplin-specifik - listen viser derfor
+    om officialen slet ikke har virket, ikke kun uden for netop den valgte disciplin. En official der matcher flere
+    valgte typer optræder på hver af listerne.</p>
+
+<?php foreach ($missingGroups as $type => $missingRows): ?>
+    <?php if ($type !== ''): ?><h3><?= h($type) ?></h3><?php endif; ?>
+    <p class="muted"><?= count($missingRows) ?> officials</p>
+
+    <table class="data">
+        <thead>
+            <tr><th>Official</th><th>Type(r)</th><th>Distrikt(er)</th><th>Status</th><th>Sidste opgave</th><th>Stævner/klasser i alt</th></tr>
+        </thead>
+        <tbody>
+        <?php foreach ($missingRows as $r): ?>
+            <tr>
+                <td><a href="<?= h(url('official.php?id=' . (int)$r['id'] . $yearQuery)) ?>"><?= h($r['navn']) ?></a></td>
+                <td class="small"><?= h($r['typer'] ?? '') ?></td>
+                <td><?= h($r['distrikter'] ?? '') ?></td>
+                <td><?= official_status_badge($r['status']) ?></td>
+                <td><?= $r['sidste_opgave'] ? dk_date($r['sidste_opgave']) : '–' ?></td>
+                <td><?= (int)$r['antal_staevner'] ?> stævner / <?= (int)$r['antal_klasser'] ?> klasser</td>
+            </tr>
+        <?php endforeach; ?>
+        <?php if (!$missingRows): ?>
+            <tr><td colspan="6" class="muted">Ingen - alle matchende officials har virket ved mindst ét stævne.</td></tr>
+        <?php endif; ?>
+        </tbody>
+    </table>
+<?php endforeach; ?>
 <?php
 render_footer();

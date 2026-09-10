@@ -1,15 +1,13 @@
 <?php
 require __DIR__ . '/inc/bootstrap.php';
 require __DIR__ . '/inc/layout.php';
-require_login();
+require_admin();
 
-$stats   = new Stats(db());
-$isAdmin = (current_user()['role'] ?? '') === 'admin';
+$stats = new Stats(db());
 
 $linkError = null;
 $linkOk    = null;
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'link_drf') {
-    require_admin();
     $drfNavn      = trim($_POST['drf_navn'] ?? '');
     $officialNavn = trim($_POST['official_navn'] ?? '');
     try {
@@ -64,39 +62,35 @@ render_header('DRF-liste', 'drf');
         <h3>DRF-navne uden match i dine data</h3>
         <p class="muted">Personer på DRF-listen der ikke kunne kobles til en official – ofte stavning/navneforskelle
             eller personer der endnu ikke har virket ved et stævne.
-            <?php if ($isAdmin): ?>Lad feltet stå tomt for at oprette som ny official, eller vælg en eksisterende
-                for at knytte navnet til den (fx ved navneskift – det gamle navn bevares som alias).<?php endif; ?></p>
+            Lad feltet stå tomt for at oprette som ny official, eller vælg en eksisterende
+            for at knytte navnet til den (fx ved navneskift – det gamle navn bevares som alias).</p>
         <?php $u = $stats->drfUnmatched(); ?>
-        <?php if ($isAdmin): ?>
-            <datalist id="official-datalist">
-                <?php foreach ($stats->officialsOverview('', 'navn') as $o): ?>
-                    <option value="<?= h($o['navn']) ?>">
-                <?php endforeach; ?>
-            </datalist>
-        <?php endif; ?>
+        <datalist id="official-datalist">
+            <?php foreach ($stats->officialsOverview('', 'navn') as $o): ?>
+                <option value="<?= h($o['navn']) ?>">
+            <?php endforeach; ?>
+        </datalist>
         <table class="data">
-            <thead><tr><th>Navn</th><th>By</th><th>Typer</th><?php if ($isAdmin): ?><th>Knyt til official</th><?php endif; ?></tr></thead>
+            <thead><tr><th>Navn</th><th>By</th><th>Typer</th><th>Knyt til official</th></tr></thead>
             <tbody>
             <?php foreach ($u as $r): ?>
                 <tr>
                     <td><?= h($r['navn']) ?></td>
                     <td class="small"><?= h(trim(($r['postnr'] ?? '') . ' ' . ($r['postdistrikt'] ?? ''))) ?></td>
                     <td class="small"><?= h($r['typer']) ?></td>
-                    <?php if ($isAdmin): ?>
-                        <td>
-                            <form method="post" style="display:flex;gap:.3rem"
-                                  onsubmit="return this.official_navn.value ? confirm('Omdøb den valgte official til dette DRF-navn (det gamle navn bevares som alias)?') : true;"><?= csrf_field() ?>
-                                <input type="hidden" name="action" value="link_drf">
-                                <input type="hidden" name="drf_navn" value="<?= h($r['navn']) ?>">
-                                <input type="text" name="official_navn" list="official-datalist" size="26"
-                                       placeholder="Tom = ny official">
-                                <button class="btn" type="submit">Knyt</button>
-                            </form>
-                        </td>
-                    <?php endif; ?>
+                    <td>
+                        <form method="post" style="display:flex;gap:.3rem"
+                              onsubmit="return this.official_navn.value ? confirm('Omdøb den valgte official til dette DRF-navn (det gamle navn bevares som alias)?') : true;"><?= csrf_field() ?>
+                            <input type="hidden" name="action" value="link_drf">
+                            <input type="hidden" name="drf_navn" value="<?= h($r['navn']) ?>">
+                            <input type="text" name="official_navn" list="official-datalist" size="26"
+                                   placeholder="Tom = ny official">
+                            <button class="btn" type="submit">Knyt</button>
+                        </form>
+                    </td>
                 </tr>
             <?php endforeach; ?>
-            <?php if (!$u): ?><tr><td colspan="<?= $isAdmin ? 4 : 3 ?>" class="muted">Alle DRF-navne er matchet 🎉</td></tr><?php endif; ?>
+            <?php if (!$u): ?><tr><td colspan="4" class="muted">Alle DRF-navne er matchet 🎉</td></tr><?php endif; ?>
             </tbody>
         </table>
     </section>
